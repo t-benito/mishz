@@ -116,12 +116,6 @@ pub const Data = union {
     pub_stmt: struct {
         stmt: *Node,
     },
-    //class_stmt: struct {
-    //    name: usize,
-    //    params: ?[]usize,
-    //    parents: ?[]usize, // class names
-    //    fields: []*Node,
-    //},
     cast: struct {
         expr: *Node,
         ty: TypeID,
@@ -204,8 +198,6 @@ pub const Parser = struct {
     types: std.ArrayList(TypeNode),
 
     slow: bool,
-
-    //imports: std.ArrayList([]*Node),
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, tokens: []Token, source: []const u8, file_name: []const u8, progress: std.Progress.Node, slow: bool) Parser {
         return Parser{
@@ -383,9 +375,6 @@ pub const Parser = struct {
 
         try self.sleepIfSlow(45);
         switch (self.peek().kind) {
-            //.kw_class => {
-            //    return try self.parseClass(&top_node);
-            //},
             else => {
                 if (try self.tryParseVarOrFn(&top_node)) |res| {
                     return res;
@@ -852,7 +841,7 @@ pub const Parser = struct {
         }
         try self.sleepIfSlow(50);
         const base_t = self.advance();
-        var ty: Type = blk: switch (base_t.kind) { // TODO: function types........
+        var ty: Type = blk: switch (base_t.kind) {
             .kw_i8 => .i8,
             .kw_i16 => .i16,
             .kw_i32 => .i32,
@@ -878,11 +867,21 @@ pub const Parser = struct {
                 if (self.matches(.open_paren)) {
                     _ = try self.expect(.open_paren, &this_node);
                     while (!self.matches(.close_paren)) {
-                        
+                        if (self.tryParseType() != null)
+                            continue;
+                        self.current = start;
+                        return null;
                     }
                     _ = try self.expect(.close_paren, &this_node);
                 }
                 const params_end = self.types.items.len - 1;
+                break :blk Type {
+                    .func = .{
+                        .returns = return_ty.?,
+                        .params_start = params_start,
+                        .params_end = params_end,
+                    },
+                };
             },
             .identifier => {
                 var this_node = parent_node.start("Parsing named type", 2);
