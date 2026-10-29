@@ -1,4 +1,3 @@
-./zig-out
-./.zig-cache
-./.idea
-./ai
+zig-out/
+.zig-cache/
+zig-pkg/
