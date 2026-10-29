@@ -3,11 +3,13 @@ const std = @import("std");
 const Lex_Error = @import("lex.zig").LexError;
 const Parse_Error = @import("parse.zig").ParseError;
 const Type_Error = @import("sema.zig").TypeError;
+const Pre_Error = @import("preprocess.zig").Preprocessor.PreprocessorError;
 
 pub const ErrorType = union(enum) {
     ParseError: Parse_Error,
     LexError: Lex_Error,
     TypeError: Type_Error,
+    PreprocessorError: Pre_Error,
 };
 
 pub const Note = struct {
@@ -46,7 +48,7 @@ pub const ErrorLogger = struct {
     }
 
     fn kindName(allocator: std.mem.Allocator, kind: ErrorType) []const u8 {
-        var err: usize = @as(usize, @intCast(@intFromEnum(kind))) * 1000;
+        var err: usize = @as(usize, @intCast(@backingInt(kind))) * 1000;
         switch (kind) {
             .ParseError => |e| err += @intFromError(e),
             .LexError => |e| err += @intFromError(e),

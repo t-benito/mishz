@@ -1,0 +1,16 @@
+// new mishz
+#include <std/fmt>
+
+#define SECURE_NUMBER 4
+#define COOL_NUMBER 42
+
+i32 main {
+    std:fmt:putsln("Hello, world!\n");
+}
+
+struct Speaker {
+    []u8 name;
+    void speak(*Speaker self, []u8 to_speak) {
+        putsln(to_speak);
+    }
+}

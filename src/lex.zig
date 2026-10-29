@@ -9,11 +9,13 @@ pub const Token = struct {
     kind: Kind,
 
     pub const Kind = enum {
+        newline, // used in preprocessor
+        eof,
+
         dot,
         comma,
-        colon,
         semicolon,
-        arrow, // ->
+        arrow,
 
         assign,
         equal,
@@ -41,6 +43,12 @@ pub const Token = struct {
         open_bracket,
         close_bracket,
         at,
+
+        pre_define,
+        pre_ifdef,
+        pre_ifndef,
+        pre_endif,
+        pre_include,
 
         kw_void,
         kw_i8,
@@ -76,6 +84,11 @@ pub const Token = struct {
     };
 
     pub const Keywords = std.StaticStringMap(Token.Kind).initComptime(.{
+        .{ "#define", .pre_define },
+        .{ "#ifdef", .pre_ifdef },
+        .{ "#ifndef", .pre_ifndef },
+        .{ "#include", .pre_include },
+
         .{ "void", .kw_void },
         .{ "i8", .kw_i8 },
         .{ "i16", .kw_i16 },
@@ -106,6 +119,7 @@ pub const Token = struct {
 
 pub const LexError = error{
     UnknownCharacter,
+    UnknownDirective,
     UnclosedStringLiteral,
 };
 
@@ -177,6 +191,16 @@ pub const Lexer = struct {
             // this is to increase the count shown in the progress bar..
             run_progress.end();
             run_progress = progress.start("Running", 0);
+
+            if (self.peek() == '\n') {
+                _ = self.advance();
+                try tokens.append(allocator, .{
+                    .start = self.current,
+                    .end = self.current,
+                    .kind = .newline,
+                });
+                continue;
+            }
 
             while (!self.isAtEnd() and std.ascii.isWhitespace(self.peek()))
                 _ = self.advance();
@@ -263,10 +287,11 @@ pub const Lexer = struct {
             }
 
             if (std.ascii.isAlphabetic(self.peek())) {
-                while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_') {
-                    _ = self.advance();
+                var char = self.peek();
+                while (!self.isAtEnd() and std.ascii.isAlphanumeric(char) or char == '_' or char == ':') {
+                    char = self.advance();
                 }
-                const str = self.source[start..self.current];
+                const str = self.source[start .. self.current - 1];
                 if (Token.Keywords.get(str)) |k| {
                     try tokens.append(allocator, .{
                         .start = start,
@@ -279,6 +304,31 @@ pub const Lexer = struct {
                     .start = start,
                     .end = self.current,
                     .kind = .identifier,
+                });
+                continue;
+            }
+            if (self.peek() == '#') {
+                //dont _ = self.advance(); // skip #
+
+                var char = self.peek();
+                while (!self.isAtEnd() and std.ascii.isAlphanumeric(char) or char == '#') {
+                    char = self.advance();
+                }
+
+                const str = self.source[start .. self.current - 1];
+                if (Token.Keywords.get(str)) |k| {
+                    try tokens.append(allocator, .{
+                        .start = start,
+                        .end = self.current,
+                        .kind = k,
+                    });
+                    continue;
+                }
+                try self.logger.add(allocator, .{
+                    .message = "unknown preprocessor directive",
+                    .kind = .{ .LexError = LexError.UnknownDirective },
+                    .start = start,
+                    .end = self.current,
                 });
                 continue;
             }
@@ -298,6 +348,21 @@ pub const Lexer = struct {
             const bad = self.source[start];
             _ = self.advance();
 
+            if (self.peek() == '#') {
+                try self.logger.add(allocator, .{
+                    .message = "unknown character '#'",
+                    .kind = .{ .LexError = LexError.UnknownCharacter },
+                    .start = start,
+                    .end = self.current,
+                    .note = .{
+                        .start = start,
+                        .end = self.current,
+                        .message = "mishz does not allow spaces between '#' and preprocessor directive",
+                    },
+                });
+                continue;
+            }
+
             const emsg = try std.fmt.allocPrint(allocator, "unknown character '{c}'", .{bad});
 
             try self.logger.add(allocator, .{
@@ -307,6 +372,12 @@ pub const Lexer = struct {
                 .end = self.current,
             });
         }
+        try tokens.append(allocator, .{
+            .start = 0,
+            .end = 0,
+            .kind = .eof,
+        });
+
         var dump = progress.start("Dumping", 0);
         progress.increaseEstimatedTotalItems(2);
         if (self.logger.dump(allocator, self.source)) {
@@ -326,7 +397,6 @@ pub const Lexer = struct {
         return switch (self.peek()) {
             '.' => .dot,
             ',' => .comma,
-            ':' => .colon,
             ';' => .semicolon,
             '=' => .assign,
             '!' => .not,

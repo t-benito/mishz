@@ -42,7 +42,7 @@ pub fn main(init: std.process.Init) !void {
     defer res.deinit();
 
     if (res.args.help != 0 or res.positionals[0].len == 0) {
-        std.debug.print("Mish compiler v0.0.2s\n\nUsage:\n", .{});
+        std.debug.print("Mish compiler v0.0.2p\n\nUsage:\n", .{});
         return clap.helpToFile(io, .stderr(), clap.Help, &params, .{});
     }
 

@@ -112,7 +112,7 @@ pub const Checker = struct {
     string_ty_id: TypeID,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, ast: []*Node, tokens: []Token, types: std.ArrayList(TypeNode), source: []const u8, file_name: []const u8, root_node: *const std.Progress.Node, slow: bool) Checker {
-        return Checker{
+        return .{
             .scope_map = ScopeMap.init(allocator),
             .ast = ast,
             .types = types,
@@ -522,15 +522,13 @@ pub const Checker = struct {
             .builtin => blk: {
                 const b = &node.data.builtin;
                 const name_str = self.spanStr(self.tokens[b.name].start, self.tokens[b.name].end);
-                if (std.mem.eql(u8, name_str, "import")) { // TODO: use string hash map
-                    if (b.args.len > 0) {
-                        _ = try self.checkExpr(b.args[0]);
-                    }
-                    break :blk .void; // TODO: struct or special mod type ??
-                }
-                for (b.args) |arg| {
-                    _ = try self.checkExpr(arg);
-                }
+                _ = name_str;
+                // STUB:
+                // TODO
+                // TODO
+                // TODO
+                // TODO
+                // TODO
                 break :blk .void;
             },
             .cast => {
