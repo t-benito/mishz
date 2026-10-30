@@ -53,6 +53,7 @@ pub const ErrorLogger = struct {
             .ParseError => |e| err += @intFromError(e),
             .LexError => |e| err += @intFromError(e),
             .TypeError => |e| err += @intFromError(e),
+            .PreprocessorError => |e| err += @intFromError(e),
         }
         return allocator.print("E{d}", .{err}) catch "(OUT OF MEMORY)";
     }

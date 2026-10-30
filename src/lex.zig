@@ -47,6 +47,8 @@ pub const Token = struct {
         pre_define,
         pre_ifdef,
         pre_ifndef,
+        pre_else,
+        pre_elif,
         pre_endif,
         pre_include,
 
@@ -87,7 +89,10 @@ pub const Token = struct {
         .{ "#define", .pre_define },
         .{ "#ifdef", .pre_ifdef },
         .{ "#ifndef", .pre_ifndef },
+        .{ "#endif", .pre_endif },
         .{ "#include", .pre_include },
+        .{ "#else", .pre_else },
+        .{ "#elif", .pre_elif },
 
         .{ "void", .kw_void },
         .{ "i8", .kw_i8 },
@@ -112,7 +117,7 @@ pub const Token = struct {
         .{ "for", .kw_for },
         .{ "pub", .kw_pub },
         .{ "struct", .kw_struct },
-        // .{ "class", .kw_class },
+        //.{ "class", .kw_class },
         .{ "as", .kw_as },
     });
 };
@@ -287,11 +292,10 @@ pub const Lexer = struct {
             }
 
             if (std.ascii.isAlphabetic(self.peek())) {
-                var char = self.peek();
-                while (!self.isAtEnd() and std.ascii.isAlphanumeric(char) or char == '_' or char == ':') {
-                    char = self.advance();
+                while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_' or self.peek() == ':') {
+                    _ = self.advance();
                 }
-                const str = self.source[start .. self.current - 1];
+                const str = self.source[start..self.current];
                 if (Token.Keywords.get(str)) |k| {
                     try tokens.append(allocator, .{
                         .start = start,
@@ -309,13 +313,11 @@ pub const Lexer = struct {
             }
             if (self.peek() == '#') {
                 //dont _ = self.advance(); // skip #
-
-                var char = self.peek();
-                while (!self.isAtEnd() and std.ascii.isAlphanumeric(char) or char == '#') {
-                    char = self.advance();
+                while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '#') {
+                    _ = self.advance();
                 }
 
-                const str = self.source[start .. self.current - 1];
+                const str = self.source[start..self.current];
                 if (Token.Keywords.get(str)) |k| {
                     try tokens.append(allocator, .{
                         .start = start,
@@ -325,7 +327,7 @@ pub const Lexer = struct {
                     continue;
                 }
                 try self.logger.add(allocator, .{
-                    .message = "unknown preprocessor directive",
+                    .message = try std.fmt.allocPrint(allocator, "unknown processor directive '{s}'", .{str}),
                     .kind = .{ .LexError = LexError.UnknownDirective },
                     .start = start,
                     .end = self.current,
@@ -386,11 +388,13 @@ pub const Lexer = struct {
         if (slow) {
             try std.Io.sleep(io.?, lexer_slow_sleep_time, .awake);
         }
+
         var finish = run_progress.start("Lexer finished!", 0);
         dump.end();
         finish.end();
         run_progress.end();
-        return tokens.toOwnedSlice(allocator);
+
+        return try tokens.toOwnedSlice(allocator);
     }
 
     fn parseSingle(self: *Lexer) ?Token.Kind {
