@@ -312,7 +312,7 @@ pub const Parser = struct {
     }
 
     fn isAtEnd(self: *Parser) bool {
-        return self.current >= self.tokens.len;
+        return self.current >= self.tokens.len or self.tokens[self.current].kind == .eof;
     }
 
     fn syncErr(self: *Parser) void {
@@ -374,6 +374,7 @@ pub const Parser = struct {
 
         try self.sleepIfSlow(45);
         switch (self.peek().kind) {
+            .kw_pub => return try self.parsePub(&top_node),
             else => {
                 if (try self.tryParseVarOrFn(&top_node)) |res| {
                     return res;
@@ -903,7 +904,7 @@ pub const Parser = struct {
 
                 if (self.matches(.open_paren)) {
                     _ = try self.expect(.open_paren, &this_node);
-                    const astart = self.types.items.len - 1;
+                    const astart = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
                     while (!self.matches(.close_paren)) {
                         if (try self.tryParseType(&this_node)) |ty| {
                             _ = ty;

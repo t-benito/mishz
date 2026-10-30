@@ -1,20 +1,7 @@
-//#include <std/fmt>
-
-#define SECURE_NUMBER 4
-#define COOL_NUMBER 42
+#define SECURE_NUMBER std:fmt:putsln("4");
 
 pub i32 main {
-    std:fmt:putsln("Hello, world!");
-#ifdef SECURE_NUMBER
-    std:fmt:putsln("This is a secure number.");
-#else
-    std:fmt:putsln("This is not a wsecure number.");
-#endif
-}
-
-struct Speaker {
-    []u8 name;
-    void speak(*Speaker self, []u8 to_speak) {
-        std:fmt:putsln(to_speak);
-    }
+    SECURE_NUMBER
+    SECURE_NUMBER
+    SECURE_NUMBER
 }

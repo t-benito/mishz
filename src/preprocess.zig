@@ -8,7 +8,7 @@ const ErrorLogger = err.ErrorLogger;
 
 const Macro = struct {
     tokens: []Token,
-    used: bool,
+    used: bool = false,
     start: usize,
     end: usize,
 };
@@ -29,8 +29,7 @@ macros: std.StringHashMap(Macro),
 logger: ErrorLogger,
 allocator: std.mem.Allocator,
 
-skipping: bool = false,
-skip_nesting: usize = 0,
+out: std.ArrayList(Token) = .empty,
 
 root_node: *const std.Progress.Node,
 slow: bool,
@@ -40,7 +39,7 @@ pub fn init(allocator: std.mem.Allocator, source: []const u8, file: []const u8, 
     return Preprocessor{
         .source = source,
         .tokens = tokens,
-        .macros = std.StringHashMap(Macro).initContext(allocator, .{}), // TODO: use init??
+        .macros = .initContext(allocator, .{}),
         .logger = ErrorLogger.init(file),
         .allocator = allocator,
         .root_node = root_node,
@@ -70,6 +69,7 @@ fn advance(self: *Preprocessor) Token {
 
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
+
     const tkn = self.tokens[self.current];
     self.current += 1;
     return tkn;
@@ -81,8 +81,8 @@ fn expect(self: *Preprocessor, expected: Token.Kind) !Token {
     const tkn = self.advance();
     if (tkn.kind != expected) {
         try self.logger.add(self.allocator, .{
-            .start = self.peek().start,
-            .end = self.peek().end,
+            .start = tkn.start,
+            .end = tkn.end,
             .message = "unexpected token",
             .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
         });
@@ -99,18 +99,21 @@ pub fn run(self: *Preprocessor) !void {
     while (!self.isAtEnd()) {
         try self.checkTkn();
     }
+
+    self.allocator.free(self.tokens);
+    self.tokens = try self.out.toOwnedSlice(self.allocator);
+
     _ = try self.replace();
     try self.cleanup();
 
-    if (self.logger.dump(self.allocator, self.source)) {
+    if (self.logger.dump(self.allocator, self.source))
         return error.pre;
-    }
 }
 
 fn checkTkn(self: *Preprocessor) !void {
     switch (self.peek().kind) {
-        .pre_ifdef => try self.ifdef(),
-        .pre_ifndef => try self.ifndef(),
+        .pre_ifdef => try self.ifdef(false),
+        .pre_ifndef => try self.ifndef(false),
         .pre_define => try self.define(),
         .pre_else, .pre_elif, .pre_endif => {
             const tkn = self.advance();
@@ -125,8 +128,36 @@ fn checkTkn(self: *Preprocessor) !void {
                     else => unreachable,
                 },
             });
+            self.skipLine();
         },
-        else => _ = self.advance(),
+        .newline => _ = self.advance(),
+        else => try self.out.append(self.allocator, self.advance()),
+    }
+}
+
+fn checkTknIf(self: *Preprocessor, discard: bool) error{
+    OutOfMemory,
+    UnexpectedToken,
+    UnterminatedDirective,
+    RecursiveMacro,
+    NoMatchingDirective, // THIS SUCKS OH MY GOD ZIG
+}!void {
+    switch (self.peek().kind) {
+        .pre_ifdef => try self.ifdef(discard),
+        .pre_ifndef => try self.ifndef(discard),
+        .pre_define => {
+            if (discard) {
+                self.skipLine();
+            } else {
+                try self.define();
+            }
+        },
+        .newline => _ = self.advance(),
+        else => {
+            const tkn = self.advance();
+            if (!discard)
+                try self.out.append(self.allocator, tkn);
+        },
     }
 }
 
@@ -136,105 +167,103 @@ fn define(self: *Preprocessor) !void {
     const name = self.spanStr(n.start, n.end);
 
     var tokens = std.ArrayList(Token).empty;
-    while (!self.isAtEnd() and self.peek().kind != .newline) {
+
+    while (!self.isAtEnd() and self.peek().kind != .newline)
         try tokens.append(self.allocator, self.advance());
-    }
+
+    self.skipLine();
 
     try self.macros.put(name, Macro{
-        .tokens = try tokens.toOwnedSlice(self.allocator),
-        .used = false,
         .start = d.start,
-        .end = d.end,
+        .end = n.end,
+        .tokens = try tokens.toOwnedSlice(self.allocator),
     });
 }
 
-fn ifdef(self: *Preprocessor) !void {
-    const d = self.advance();
+fn ifdef(self: *Preprocessor, parent_discard: bool) !void {
+    _ = self.advance();
+
     const n = try self.expect(.identifier);
+    const name = self.spanStr(n.start, n.end);
+    const defined = self.macros.contains(name);
 
-    if (self.skipping) {
-        self.skip_nesting += 1;
-        return;
-    }
+    self.skipLine();
 
-    const defined = self.macros.contains(self.spanStr(n.start, n.end));
-    if (!defined) {
-        try self.skipUntil(.pre_endif, d.start, d.end);
-    } else {
-        while (!self.isAtEnd() and self.advance().kind != .pre_endif) {}
-    }
+    try self.procIf(parent_discard, defined);
 }
 
-fn ifndef(self: *Preprocessor) !void {
-    const d = self.advance();
-    const n = try self.expect(.identifier);
+fn ifndef(self: *Preprocessor, parent_discard: bool) !void {
+    _ = self.advance();
 
-    if (self.skipping) {
-        self.skip_nesting += 1;
-        return;
+    const n = try self.expect(.identifier);
+    const name = self.spanStr(n.start, n.end);
+    const defined = self.macros.contains(name);
+
+    self.skipLine();
+
+    try self.procIf(parent_discard, !defined);
+}
+
+fn procIf(self: *Preprocessor, parent_discard: bool, condition: bool) !void {
+    var discard = parent_discard or !condition;
+    var branch_taken = !parent_discard and condition;
+
+    while (!self.isAtEnd()) {
+        switch (self.peek().kind) {
+            .pre_endif => {
+                self.endif();
+                return;
+            },
+            .pre_elif => {
+                if (parent_discard or branch_taken) {
+                    self.skipLine();
+                    discard = true;
+                } else {
+                    const result = try self.elif();
+                    discard = !result;
+                    branch_taken = result;
+                }
+            },
+            .pre_else => {
+                self.elsee(discard);
+                discard = parent_discard or branch_taken;
+
+                if (!parent_discard)
+                    branch_taken = true;
+            },
+            else => try self.checkTknIf(discard),
+        }
     }
 
-    const defined = self.macros.contains(self.spanStr(n.start, n.end));
-    if (!defined)
-        while (!self.isAtEnd() and self.advance().kind != .pre_endif) {};
-    try self.skipUntil(.pre_endif, d.start, d.end);
+    return PreprocessorError.NoMatchingDirective;
 }
 
 fn elif(self: *Preprocessor) !bool {
-    const n = try self.expect(.identifier);
+    _ = self.advance();
 
-    const defined = self.macros.contains(self.spanStr(n.start, n.end));
-    if (!defined)
-        return false;
-    self.skip_nesting = 0;
-    self.skipping = false;
-    return true;
+    const n = try self.expect(.identifier);
+    const name = self.spanStr(n.start, n.end);
+
+    self.skipLine();
+    return self.macros.contains(name);
 }
 
-fn skipUntil(self: *Preprocessor, kind: Token.Kind, dir_start: usize, dir_end: usize) !void {
-    self.skipping = true;
-    self.skip_nesting = 1;
+fn elsee(self: *Preprocessor, discarded: bool) void {
+    _ = discarded;
+    self.skipLine();
+}
 
-    while (self.skip_nesting > 0) {
-        const t = self.advance();
+fn endif(self: *Preprocessor) void {
+    _ = self.advance();
+    self.skipLine();
+}
 
-        if (t.kind == .eof) {
-            try self.logger.add(self.allocator, .{
-                .start = dir_start,
-                .end = dir_end,
-                .kind = .{ .PreprocessorError = PreprocessorError.UnterminatedDirective },
-                .message = "unterminated processor directive",
-            });
-            return PreprocessorError.UnterminatedDirective;
-        }
+fn skipLine(self: *Preprocessor) void {
+    while (!self.isAtEnd() and self.peek().kind != .newline)
+        _ = self.advance();
 
-        if (self.skip_nesting == 1 and t.kind != kind) {
-            if (t.kind == .pre_elif) {
-                if (!try self.elif())
-                    continue;
-                return;
-            } else if (t.kind == .pre_else) {
-                self.skip_nesting = 0;
-                self.skipping = false;
-                return;
-            }
-        }
-
-        if (t.kind == .pre_ifdef or t.kind == .pre_ifndef) {
-            self.skip_nesting += 1;
-            continue;
-        }
-
-        if (t.kind == kind) {
-            self.skip_nesting -= 1;
-            if (self.skip_nesting > 0)
-                continue;
-            self.skipping = false;
-            _ = self.advance();
-            return;
-        }
-    }
-    self.skipping = false;
+    if (!self.isAtEnd())
+        _ = self.advance();
 }
 
 fn replace(self: *Preprocessor) !bool {
@@ -248,8 +277,12 @@ fn replace(self: *Preprocessor) !bool {
             found_any = true;
     }
 
-    if (found_any)
-        self.tokens = try new.toOwnedSlice(self.allocator);
+    if (found_any) {
+        const result = try new.toOwnedSlice(self.allocator);
+        self.allocator.free(self.tokens);
+        self.tokens = result;
+    }
+
     return found_any;
 }
 
@@ -275,12 +308,13 @@ fn expand(self: *Preprocessor, tkn: Token, new: *std.ArrayList(Token)) !bool {
             });
             return PreprocessorError.RecursiveMacro;
         }
+
         macro.used = true;
         defer macro.used = false;
 
-        for (macro.tokens) |stkn| {
+        for (macro.tokens) |stkn|
             _ = try self.expand(stkn, new);
-        }
+
         return true;
     }
 
@@ -291,11 +325,10 @@ fn expand(self: *Preprocessor, tkn: Token, new: *std.ArrayList(Token)) !bool {
 fn cleanup(self: *Preprocessor) !void {
     var new = std.ArrayList(Token).empty;
 
-    var i: usize = 0;
-    while (i < self.tokens.len) : (i += 1) {
-        const t = self.tokens[i];
+    for (self.tokens) |t| {
         if (t.kind == .newline)
             continue;
+
         if (t.kind == .pre_define or
             t.kind == .pre_ifdef or
             t.kind == .pre_ifndef or
@@ -303,11 +336,13 @@ fn cleanup(self: *Preprocessor) !void {
             t.kind == .pre_elif or
             t.kind == .pre_else)
         {
-            while (i < self.tokens.len and self.tokens[i].kind != .newline)
-                i += 1;
             continue;
         }
+
         try new.append(self.allocator, t);
     }
-    self.tokens = try new.toOwnedSlice(self.allocator);
+
+    const result = try new.toOwnedSlice(self.allocator);
+    self.allocator.free(self.tokens);
+    self.tokens = result;
 }
