@@ -47,6 +47,8 @@ pub const Token = struct {
         at,
 
         pre_define,
+        //pre_macro,
+        //pre_endmacro,
         pre_ifdef,
         pre_ifndef,
         pre_else,

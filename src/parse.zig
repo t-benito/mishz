@@ -174,6 +174,7 @@ pub const Node = struct {
     tag: Tag,
     start: usize,
     end: usize,
+    file: u8,
 };
 
 pub const ParseError = error{
@@ -845,6 +846,8 @@ pub const Parser = struct {
                 });
             } else break;
         }
+        try_node.end();
+
         try self.sleepIfSlow(50);
         const base_t = self.advance();
         var ty: Type = blk: switch (base_t.kind) {

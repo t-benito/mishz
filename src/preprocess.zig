@@ -66,7 +66,7 @@ fn sleepIfSlow(self: *Preprocessor, time: u32) void {
 }
 
 fn peek(self: *Preprocessor) Token {
-    self.sleepIfSlow(170);
+    self.sleepIfSlow(150);
 
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
@@ -74,7 +74,7 @@ fn peek(self: *Preprocessor) Token {
 }
 
 fn advance(self: *Preprocessor) Token {
-    self.sleepIfSlow(150);
+    self.sleepIfSlow(110);
 
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
@@ -85,7 +85,7 @@ fn advance(self: *Preprocessor) Token {
 }
 
 fn expect(self: *Preprocessor, expected: Token.Kind) !Token {
-    self.sleepIfSlow(320);
+    self.sleepIfSlow(190);
 
     const tkn = self.advance();
     if (tkn.kind != expected) {
@@ -200,6 +200,8 @@ fn include(self: *Preprocessor) !void {
                 const t = self.advance();
                 try name.appendSlice(self.allocator, self.file_table.spanStr(t.file, t.start, t.end));
             }
+            _ = try self.expect(.gt);
+
             const path = try std.fs.path.join(self.allocator, &.{
                 self.libc_path,
                 try name.toOwnedSlice(self.allocator),
@@ -214,6 +216,7 @@ fn include(self: *Preprocessor) !void {
                 .message = "expected string or '<' after '#include'",
                 .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
             });
+            return PreprocessorError.UnexpectedToken;
         },
     }
 }
@@ -324,7 +327,7 @@ fn skipLine(self: *Preprocessor) void {
 }
 
 fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, start: usize, end: usize) anyerror!void {
-    var parent_node = self.root_node.start("Importing file", 1);
+    var parent_node = self.root_node.start("Including file", 1);
     defer parent_node.end();
 
     if (self.file_id == std.math.maxInt(u8)) {
@@ -379,15 +382,21 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
     };
     // now we can finally read it...
     const id = try self.file_table.addFile(self.allocator, path, source);
+    // lexer
+    var lex_progress = parent_node.start("Lexer", source.len / 27);
 
     var lexer = lex.Lexer.init(id, self.file_table);
-    const tokens = try lexer.run(self.allocator, parent_node, self.slow, self.io);
+    const tokens = try lexer.run(self.allocator, lex_progress, self.slow, self.io);
+
+    lex_progress.end();
+    // preprocessor
+    var pre_progress = parent_node.start("Preprocessor", tokens.len / 5);
 
     var sub = try Preprocessor.init(
         self.allocator,
         id,
         tokens,
-        &parent_node,
+        &pre_progress,
         self.file_table,
         self.slow,
         self.io,
@@ -397,6 +406,8 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
 
     try self.out.appendSlice(self.allocator, sub.tokens[0 .. sub.tokens.len - 1]);
     self.macros = sub.macros;
+
+    pre_progress.end();
 }
 
 fn replace(self: *Preprocessor) !bool {
