@@ -1,3 +1,5 @@
+#include <std/fmt>
+
 #define SECURE_NUMBER std:fmt:putsln("4");
 
 pub i32 main {
@@ -5,3 +7,28 @@ pub i32 main {
     SECURE_NUMBER
     SECURE_NUMBER
 }
+
+/*
+struct List {
+  []void data;
+  u64 elmt_size;
+
+  List new() {
+    ret...
+  }
+}
+
+struct Player {
+  i32 hp;
+  []u8 name;
+  []u8 class;
+}
+
+Player Player:new(i32 hp, []u8 class) {
+  ret Player{
+    .hp = hp;
+    .class = class;
+    .name = "Adventurer",
+  };
+}
+*/

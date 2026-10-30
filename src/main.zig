@@ -101,7 +101,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     //////////////////////////////////// preprocessor
     var pre_progress = root_progress.start("Preprocessor", tokens.len / 22);
 
-    var preprocessor = preprocess.Preprocessor.init(
+    var preprocessor = try preprocess.Preprocessor.init(
         arena,
         0,
         tokens,
@@ -125,7 +125,15 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     if (args.slow != 0) {
         try std.Io.sleep(io, std.Io.Duration.fromMilliseconds(150), .awake);
     }
-    var parser = parse.Parser.init(arena, io, tokens, source, path, parser_progress, args.slow != 0);
+    var parser = parse.Parser.init(
+        arena,
+        io,
+        tokens,
+        0,
+        &file_table,
+        parser_progress,
+        args.slow != 0,
+    );
     const ast = parser.run() catch std.process.exit(1);
     parser_progress.end();
 
@@ -136,7 +144,17 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
 
     /////////////////////////////////// sema
     var checker_progress = root_progress.start("Semantic Analysis", ast.len);
-    var checker = sema.Checker.init(arena, io, ast, tokens, parser.types, source, path, &checker_progress, args.slow != 0);
+    var checker = sema.Checker.init(
+        arena,
+        io,
+        ast,
+        tokens,
+        parser.types,
+        0,
+        &file_table,
+        &checker_progress,
+        args.slow != 0,
+    );
     try checker.run();
     checker_progress.end();
 }

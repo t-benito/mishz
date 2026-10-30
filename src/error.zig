@@ -99,7 +99,7 @@ pub const ErrorLogger = struct {
         if (is_note) {
             std.debug.print("\n{s}note{s}: {s}\n", .{ BLUE, RESET, message });
         } else {
-            std.debug.print("{s}{s}{s}: {s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, self.file, RESET, RED, RESET, DIM, label, RESET, message });
+            std.debug.print("{s}{s}{s}: {s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, self.file_table.getPath(self.file), RESET, RED, RESET, DIM, label, RESET, message });
         }
         std.debug.print(" {s}-->{s} {d}:{d}\n\n", .{ CYAN, RESET, line, col });
 

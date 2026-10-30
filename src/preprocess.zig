@@ -25,6 +25,7 @@ pub const PreprocessorError = error{
 current: usize = 0,
 
 file_id: u8,
+source: []const u8,
 tokens: []Token,
 macros: std.StringHashMap(Macro),
 
@@ -40,16 +41,18 @@ io: std.Io,
 libc_path: []const u8,
 file_table: *FileTable,
 
-pub fn init(allocator: std.mem.Allocator, file_id: u8, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, slow: bool, io: std.Io) Preprocessor {
+pub fn init(allocator: std.mem.Allocator, file_id: u8, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, slow: bool, io: std.Io) !Preprocessor {
     return Preprocessor{
+        .file_id = file_id,
+        .source = file_table.getSource(file_id),
         .tokens = tokens,
         .macros = .initContext(allocator, .{}),
-        .logger = .init(file_id),
+        .logger = .init(file_id, file_table),
         .allocator = allocator,
         .root_node = root_node,
         .slow = slow,
         .io = io,
-        .libc_path = try std.fs.path.join(allocator, .{
+        .libc_path = try std.fs.path.join(allocator, &.{
             try std.process.executableDirPathAlloc(io, allocator),
             "libc",
             "std",
@@ -67,7 +70,7 @@ fn spanStr(self: *Preprocessor, start: usize, end: usize) []const u8 {
 }
 
 fn peek(self: *Preprocessor) Token {
-    self.sleepIfSlow(30);
+    self.sleepIfSlow(170);
 
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
@@ -75,7 +78,7 @@ fn peek(self: *Preprocessor) Token {
 }
 
 fn advance(self: *Preprocessor) Token {
-    self.sleepIfSlow(25);
+    self.sleepIfSlow(150);
 
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
@@ -86,7 +89,7 @@ fn advance(self: *Preprocessor) Token {
 }
 
 fn expect(self: *Preprocessor, expected: Token.Kind) !Token {
-    self.sleepIfSlow(40);
+    self.sleepIfSlow(320);
 
     const tkn = self.advance();
     if (tkn.kind != expected) {
@@ -116,7 +119,7 @@ pub fn run(self: *Preprocessor) !void {
     _ = try self.replace();
     try self.cleanup();
 
-    if (self.logger.dump(self.allocator, self.source))
+    if (self.logger.dump(self.allocator))
         return error.pre;
 }
 
@@ -145,15 +148,16 @@ fn checkTkn(self: *Preprocessor) !void {
         else => try self.out.append(self.allocator, self.advance()),
     }
 }
-
-fn checkTknIf(self: *Preprocessor, discard: bool) error{
-    OutOfMemory,
-    UnexpectedToken,
-    UnterminatedDirective,
-    RecursiveMacro,
-    NoMatchingDirective,
-    IncludeError, // THIS SUCKS OH MY GOD ZIG
-}!void {
+//                                                fuck it
+fn checkTknIf(self: *Preprocessor, discard: bool) anyerror //error{
+//OutOfMemory,
+//UnexpectedToken,
+//UnterminatedDirective,
+//R//ecursiveMacro,
+//NoMatchingDirective,
+//IncludeError, // THIS SUCKS OH MY GOD ZIG
+//}!void {
+!void {
     switch (self.peek().kind) {
         .pre_ifdef => try self.ifdef(discard),
         .pre_ifndef => try self.ifndef(discard),
@@ -190,11 +194,11 @@ fn include(self: *Preprocessor) !void {
             var name = std.ArrayList(u8).empty;
             while (!self.isAtEnd() and self.peek().kind != .gt) {
                 const t = self.advance();
-                try name.appendSlice(self.allocator, self.file_table.spanStr(t.start, t.end));
+                try name.appendSlice(self.allocator, self.spanStr(t.start, t.end));
             }
-            const path = try std.fs.path.join(self.allocator, .{
+            const path = try std.fs.path.join(self.allocator, &.{
                 self.libc_path,
-                name.toOwnedSlice(self.allocator),
+                try name.toOwnedSlice(self.allocator),
             });
             try self.inclFile(path, s.start, s.end);
         },
@@ -204,6 +208,7 @@ fn include(self: *Preprocessor) !void {
                 .start = d.start,
                 .end = s.end,
                 .message = "expected string or '<' after '#include'",
+                .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
             });
         },
     }
@@ -314,9 +319,6 @@ fn skipLine(self: *Preprocessor) void {
         _ = self.advance();
 }
 
-// needed here so import it HERE!!!
-const lex = @import("lex.zig");
-
 fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !void {
     var parent_node = self.root_node.start("Importing file", 1);
     defer parent_node.end();
@@ -336,6 +338,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
             .start = start,
             .end = end,
             .message = "file name does not end in .msh",
+            .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
         return PreprocessorError.IncludeError;
     }
@@ -346,7 +349,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
-            .message = self.allocator.print("encountered error opening file: {s}", @tagName(e)),
+            .message = try self.allocator.print("encountered error opening file: {s}", .{@errorName(e)}),
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
         return PreprocessorError.IncludeError;
@@ -360,7 +363,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
-            .message = self.allocator.print("encountered error reading file: {s}", @tagName(e)),
+            .message = try self.allocator.print("encountered error reading file: {s}", .{@errorName(e)}),
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
         return PreprocessorError.IncludeError;
@@ -368,14 +371,10 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
     // now we can finally read it...
     const id = try self.file_table.addFile(self.allocator, path, source);
 
-    var lexer = lex.Lexer.init(id, path);
-    const tokens = try lexer.run(self.allocator, &parent_node, self.slow, self.io);
+    var lexer = lex.Lexer.init(id, self.file_table);
+    const tokens = try lexer.run(self.allocator, parent_node, self.slow, self.io);
 
-    var tl = try std.ArrayList(Token).initCapacity(self.allocator, self.tokens.len + tokens.len);
-    try tl.appendSlice(self.allocator, tokens);
-    try tl.appendSlice(self.allocator, self.tokens);
-
-    self.tokens = tl.toOwnedSlice(self.allocator);
+    try self.out.appendSlice(self.allocator, tokens);
 }
 
 fn replace(self: *Preprocessor) !bool {
@@ -446,7 +445,8 @@ fn cleanup(self: *Preprocessor) !void {
             t.kind == .pre_ifndef or
             t.kind == .pre_endif or
             t.kind == .pre_elif or
-            t.kind == .pre_else)
+            t.kind == .pre_else or
+            t.kind == .pre_include)
         {
             continue;
         }

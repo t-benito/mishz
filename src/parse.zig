@@ -9,6 +9,8 @@ const ErrorLogger = err.ErrorLogger;
 const Error = err.Error;
 const ErrorType = err.ErrorType;
 
+const FileTable = @import("file_table.zig").FileTable;
+
 pub const Tag = enum {
     integer,
     string,
@@ -185,8 +187,10 @@ pub const ParseError = error{
 };
 
 pub const Parser = struct {
-    tokens: []Token,
+    file_id: u8,
+    file_table: *FileTable,
     source: []const u8,
+    tokens: []Token,
     current: usize = 0,
 
     allocator: std.mem.Allocator,
@@ -199,13 +203,15 @@ pub const Parser = struct {
 
     slow: bool,
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, tokens: []Token, source: []const u8, file_name: []const u8, progress: std.Progress.Node, slow: bool) Parser {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, tokens: []Token, file_id: u8, file_table: *FileTable, progress: std.Progress.Node, slow: bool) Parser {
         return Parser{
+            .file_id = file_id,
+            .file_table = file_table,
+            .source = file_table.getSource(file_id),
             .tokens = tokens,
-            .source = source,
             .allocator = allocator,
             .io = io,
-            .logger = ErrorLogger.init(file_name),
+            .logger = .init(file_id, file_table),
             .types = std.ArrayList(TypeNode).empty,
             .root_node = progress,
             .slow = slow,
@@ -345,7 +351,7 @@ pub const Parser = struct {
             try nodes.append(self.allocator, top);
             self.root_node.setEstimatedTotalItems(@max(self.tokens.len / 25, nodes.items.len));
         }
-        if (self.logger.dump(self.allocator, self.source)) {
+        if (self.logger.dump(self.allocator)) {
             return error.parse;
         }
         const array = try nodes.toOwnedSlice(self.allocator);

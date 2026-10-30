@@ -15,6 +15,8 @@ const err = @import("error.zig");
 const Error = err.Error;
 const Note = err.Note;
 
+const FileTable = @import("file_table.zig").FileTable;
+
 const Symbol = struct {
     data: Symbol.Data,
     kind: Symbol.Kind,
@@ -97,10 +99,10 @@ pub const Checker = struct {
 
     ast: []*Node,
     types: std.ArrayList(TypeNode),
-
     tokens: []Token,
-
     source: []const u8,
+    file_id: u8,
+    file_table: *FileTable,
 
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -108,22 +110,32 @@ pub const Checker = struct {
     logger: err.ErrorLogger,
 
     slow: bool,
-
     string_ty_id: TypeID,
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, ast: []*Node, tokens: []Token, types: std.ArrayList(TypeNode), source: []const u8, file_name: []const u8, root_node: *const std.Progress.Node, slow: bool) Checker {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        ast: []*Node,
+        tokens: []Token,
+        types: std.ArrayList(TypeNode),
+        file_id: u8,
+        file_table: *FileTable,
+        root_node: *const std.Progress.Node,
+        slow: bool,
+    ) Checker {
         return .{
-            .scope_map = ScopeMap.init(allocator),
+            .scope_map = .init(allocator),
             .ast = ast,
             .types = types,
             .tokens = tokens,
-
-            .source = source,
+            .source = file_table.getSource(file_id),
+            .file_id = file_id,
+            .file_table = file_table,
 
             .allocator = allocator,
             .io = io,
             .root_node = root_node,
-            .logger = err.ErrorLogger.init(file_name),
+            .logger = .init(file_id, file_table),
 
             .slow = slow,
             .string_ty_id = 0,
@@ -150,7 +162,7 @@ pub const Checker = struct {
             try self.sleepIfSlow(50);
             self.checkTop(node, self.root_node) catch {};
         }
-        if (self.logger.dump(self.allocator, self.source)) {
+        if (self.logger.dump(self.allocator)) {
             return error.checker;
         }
     }

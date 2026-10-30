@@ -152,7 +152,7 @@ pub const Lexer = struct {
             .current = 0,
             .col = 0,
             .row = 0,
-            .logger = ErrorLogger.init(file_id),
+            .logger = .init(file_id, file_table),
         };
     }
 
@@ -343,7 +343,6 @@ pub const Lexer = struct {
                     .message = try std.fmt.allocPrint(allocator, "unknown processor directive '{s}'", .{str}),
                     .kind = .{ .LexError = LexError.UnknownDirective },
                     .start = start,
-                    .file = self.file_id,
                     .end = self.current,
                 });
                 continue;
@@ -398,7 +397,7 @@ pub const Lexer = struct {
 
         var dump = progress.start("Dumping", 0);
         progress.increaseEstimatedTotalItems(2);
-        if (self.logger.dump(allocator, self.source)) {
+        if (self.logger.dump(allocator)) {
             return error.lexer;
         }
         if (slow) {

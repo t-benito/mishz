@@ -6,11 +6,11 @@ paths: std.ArrayList([]const u8),
 sources: std.ArrayList([]const u8),
 
 pub fn init(allocator: std.mem.Allocator, main_path: []const u8, main_source: []const u8) !FileTable {
-    const paths = try std.ArrayList([]const u8).initCapacity(allocator, 1);
+    var paths = try std.ArrayList([]const u8).initCapacity(allocator, 1);
     errdefer paths.deinit(allocator);
     try paths.append(allocator, main_path);
 
-    const sources = try std.ArrayList([]const u8).initCapacity(allocator, 1);
+    var sources = try std.ArrayList([]const u8).initCapacity(allocator, 1);
     errdefer paths.deinit(allocator);
     try sources.append(allocator, main_source);
 
@@ -34,7 +34,7 @@ pub fn deinit(self: *FileTable, allocator: std.mem.Allocator) void {
 pub fn addFile(self: *FileTable, allocator: std.mem.Allocator, path: []const u8, source: []const u8) !u8 {
     try self.paths.append(allocator, path);
     try self.sources.append(allocator, source);
-    return self.paths.items.len - 1;
+    return @intCast(self.paths.items.len - 1);
 }
 
 pub fn getPath(self: *const FileTable, idx: usize) []const u8 {
