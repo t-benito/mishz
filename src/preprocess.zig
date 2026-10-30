@@ -65,10 +65,6 @@ fn sleepIfSlow(self: *Preprocessor, time: u32) void {
     std.Io.sleep(self.io, .fromMicroseconds(time), .awake) catch {};
 }
 
-fn spanStr(self: *Preprocessor, start: usize, end: usize) []const u8 {
-    return self.source[start..end];
-}
-
 fn peek(self: *Preprocessor) Token {
     self.sleepIfSlow(170);
 
@@ -110,7 +106,7 @@ fn isAtEnd(self: *Preprocessor) bool {
 
 pub fn run(self: *Preprocessor) !void {
     while (!self.isAtEnd()) {
-        try self.checkTkn();
+        self.checkTkn() catch break;
     }
 
     self.allocator.free(self.tokens);
@@ -188,19 +184,27 @@ fn include(self: *Preprocessor) !void {
     switch (s.kind) {
         .string_literal => {
             const n = self.file_table.spanStr(self.file_id, s.start, s.end);
-            try self.inclFile(n, s.start, s.end);
+
+            const base = self.file_table.getPath(self.file_id);
+            const dir = std.fs.path.dirname(base) orelse ".";
+            const total = try std.fs.path.resolve(self.allocator, &.{
+                dir,
+                n,
+            });
+
+            try self.inclFile(total, false, s.start, s.end);
         },
         .lt => {
             var name = std.ArrayList(u8).empty;
             while (!self.isAtEnd() and self.peek().kind != .gt) {
                 const t = self.advance();
-                try name.appendSlice(self.allocator, self.spanStr(t.start, t.end));
+                try name.appendSlice(self.allocator, self.file_table.spanStr(t.file, t.start, t.end));
             }
             const path = try std.fs.path.join(self.allocator, &.{
                 self.libc_path,
                 try name.toOwnedSlice(self.allocator),
             });
-            try self.inclFile(path, s.start, s.end);
+            try self.inclFile(path, true, s.start, s.end);
         },
         else => {
             self.current -= 1;
@@ -217,7 +221,7 @@ fn include(self: *Preprocessor) !void {
 fn define(self: *Preprocessor) !void {
     const d = self.advance();
     const n = try self.expect(.identifier);
-    const name = self.spanStr(n.start, n.end);
+    const name = self.file_table.spanStr(n.file, n.start, n.end);
 
     var tokens = std.ArrayList(Token).empty;
 
@@ -237,7 +241,7 @@ fn ifdef(self: *Preprocessor, parent_discard: bool) !void {
     _ = self.advance();
 
     const n = try self.expect(.identifier);
-    const name = self.spanStr(n.start, n.end);
+    const name = self.file_table.spanStr(n.file, n.start, n.end);
     const defined = self.macros.contains(name);
 
     self.skipLine();
@@ -249,7 +253,7 @@ fn ifndef(self: *Preprocessor, parent_discard: bool) !void {
     _ = self.advance();
 
     const n = try self.expect(.identifier);
-    const name = self.spanStr(n.start, n.end);
+    const name = self.file_table.spanStr(n.file, n.start, n.end);
     const defined = self.macros.contains(name);
 
     self.skipLine();
@@ -295,7 +299,7 @@ fn elif(self: *Preprocessor) !bool {
     _ = self.advance();
 
     const n = try self.expect(.identifier);
-    const name = self.spanStr(n.start, n.end);
+    const name = self.file_table.spanStr(n.file, n.start, n.end);
 
     self.skipLine();
     return self.macros.contains(name);
@@ -319,7 +323,7 @@ fn skipLine(self: *Preprocessor) void {
         _ = self.advance();
 }
 
-fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !void {
+fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, start: usize, end: usize) anyerror!void {
     var parent_node = self.root_node.start("Importing file", 1);
     defer parent_node.end();
 
@@ -343,7 +347,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
         return PreprocessorError.IncludeError;
     }
 
-    const file = std.Io.Dir.cwd().openFile(self.io, path, .{
+    const file = std.Io.Dir.openFileAbsolute(self.io, path, .{
         .mode = .read_only,
     }) catch |e| {
         try self.logger.add(self.allocator, .{
@@ -351,6 +355,11 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
             .end = end,
             .message = try self.allocator.print("encountered error opening file: {s}", .{@errorName(e)}),
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
+            .note = if (from_libc) .{
+                .start = start,
+                .end = end,
+                .message = "this file is from libc: if it was not found, reinstall the compiler or move it back",
+            } else null,
         });
         return PreprocessorError.IncludeError;
     };
@@ -374,7 +383,20 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
     var lexer = lex.Lexer.init(id, self.file_table);
     const tokens = try lexer.run(self.allocator, parent_node, self.slow, self.io);
 
-    try self.out.appendSlice(self.allocator, tokens);
+    var sub = try Preprocessor.init(
+        self.allocator,
+        id,
+        tokens,
+        &parent_node,
+        self.file_table,
+        self.slow,
+        self.io,
+    );
+    sub.macros = self.macros;
+    try sub.run();
+
+    try self.out.appendSlice(self.allocator, sub.tokens[0 .. sub.tokens.len - 1]);
+    self.macros = sub.macros;
 }
 
 fn replace(self: *Preprocessor) !bool {
@@ -403,7 +425,7 @@ fn expand(self: *Preprocessor, tkn: Token, new: *std.ArrayList(Token)) !bool {
         return false;
     }
 
-    const name = self.spanStr(tkn.start, tkn.end);
+    const name = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
     if (self.macros.getPtr(name)) |macro| {
         if (macro.used) {
             try self.logger.add(self.allocator, .{

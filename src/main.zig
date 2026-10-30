@@ -90,7 +90,12 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     defer root_progress.end();
 
     //////////////////////////////////// file table
-    var file_table = try FileTable.init(arena, path, source);
+    const cwd = try std.process.currentPathAlloc(io, arena);
+    const total = try std.fs.path.join(arena, &.{
+        cwd,
+        path,
+    });
+    var file_table = try FileTable.init(arena, total, source);
 
     /////////////////////////////////// lexer
     var lexer = lex.Lexer.init(0, &file_table);
@@ -116,7 +121,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     pre_progress.end();
 
     if (args.tokens != 0) {
-        try tknprint.print(tokens, source, io, arena);
+        try tknprint.print(tokens, &file_table, io, arena);
         return;
     }
 

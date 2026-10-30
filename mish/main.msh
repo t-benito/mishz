@@ -1,4 +1,6 @@
-#include <std/fmt>
+#include "otherfile.msh"
+#include "otherfile.msh"
+#include "otherfile.msh"
 
 #define SECURE_NUMBER std:fmt:putsln("4");
 

@@ -1,12 +1,13 @@
 const std = @import("std");
 const lex = @import("lex.zig");
 const Token = lex.Token;
+const FileTable = @import("file_table.zig").FileTable;
 
-pub fn print(tokens: []const Token, source: []const u8, io: std.Io, allocator: std.mem.Allocator) !void {
+pub fn print(tokens: []const Token, file_table: *FileTable, io: std.Io, allocator: std.mem.Allocator) !void {
     var buffer = std.ArrayList(u8).empty;
 
     for (tokens) |tkn| {
-        try printTkn(tkn, source, &buffer, allocator);
+        try printTkn(tkn, file_table.getSource(tkn.file), &buffer, allocator);
     }
 
     try std.Io.File.stdout().writeStreamingAll(io, buffer.items);
@@ -25,8 +26,14 @@ fn printTkn(token: Token, source: []const u8, buffer: *std.ArrayList(u8), alloca
     for (0..getPadding(20, slice.len)) |_| {
         try buffer.append(allocator, ' ');
     }
-    const fmt = try std.fmt.allocPrint(allocator, "span: {} - {}\n", .{ token.start, token.end });
+    const fmt = try std.fmt.allocPrint(allocator, "span: {} - {}", .{ token.start, token.end });
     try buffer.appendSlice(allocator, fmt);
+
+    for (0..getPadding(20, fmt.len)) |_| {
+        try buffer.append(allocator, ' ');
+    }
+    const ffmt = try std.fmt.allocPrint(allocator, "file id: {}\n", .{token.file});
+    try buffer.appendSlice(allocator, ffmt);
 }
 
 // i dont have an idea for the name

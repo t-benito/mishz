@@ -1,0 +1,12 @@
+#ifndef OTHERFILE
+#define OTHERFILE
+
+#include "main.msh"
+
+//#include <std/fmt.msh>
+
+pub void stringArgs {
+  std:fmt:putsln("hello, world!");
+}
+
+#endif
