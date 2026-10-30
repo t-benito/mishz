@@ -1,6 +1,7 @@
 const clap = @import("clap");
 const std = @import("std");
 
+const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
 const preprocess = @import("preprocess.zig");
 const parse = @import("parse.zig");
@@ -88,8 +89,11 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     var root_progress = std.Progress.start(io, .{ .root_name = progress_name });
     defer root_progress.end();
 
+    //////////////////////////////////// file table
+    var file_table = try FileTable.init(arena, path, source);
+
     /////////////////////////////////// lexer
-    var lexer = lex.Lexer.init(source, path);
+    var lexer = lex.Lexer.init(0, &file_table);
     var lexer_progress = root_progress.start("Lexer", source.len / 12 + 3);
     var tokens = lexer.run(arena, lexer_progress, args.slow != 0, if (args.slow != 0) io else null) catch std.process.exit(1);
     lexer_progress.end();
@@ -99,10 +103,10 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
 
     var preprocessor = preprocess.Preprocessor.init(
         arena,
-        source,
-        path,
+        0,
         tokens,
         &pre_progress,
+        &file_table,
         args.slow != 0,
         io,
     );

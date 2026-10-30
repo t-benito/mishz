@@ -32,8 +32,8 @@ pub fn deinit(self: *FileTable, allocator: std.mem.Allocator) void {
 }
 
 pub fn addFile(self: *FileTable, allocator: std.mem.Allocator, path: []const u8, source: []const u8) !u8 {
-    self.paths.append(allocator, path);
-    self.sources.append(allocator, source);
+    try self.paths.append(allocator, path);
+    try self.sources.append(allocator, source);
     return self.paths.items.len - 1;
 }
 
@@ -45,11 +45,7 @@ pub fn getSource(self: *const FileTable, idx: usize) []const u8 {
     return self.sources.items[idx];
 }
 
-pub fn spanStr(self: *const FileTable, file_id: u8, start: usize, end: usize) ?[]const u8 {
-    if (file_id >= self.sources.items.len)
-        return null;
+pub fn spanStr(self: *const FileTable, file_id: u8, start: usize, end: usize) []const u8 {
     const source = self.sources.items[file_id];
-    if (start > end or end > source.len)
-        return null;
     return source[start..end];
 }

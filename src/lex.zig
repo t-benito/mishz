@@ -2,6 +2,7 @@ const std = @import("std");
 
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
+const FileTable = @import("file_table.zig").FileTable;
 
 pub const Token = struct {
     start: usize,
@@ -132,6 +133,9 @@ pub const LexError = error{
 const lexer_slow_sleep_time = std.Io.Duration.fromMilliseconds(25);
 
 pub const Lexer = struct {
+    file_id: u8,
+    file_table: *FileTable,
+
     source: []const u8,
 
     current: usize,
@@ -140,13 +144,15 @@ pub const Lexer = struct {
 
     logger: ErrorLogger,
 
-    pub fn init(source: []const u8, file_name: []const u8) Lexer {
+    pub fn init(file_id: u8, file_table: *FileTable) Lexer {
         return .{
-            .source = source,
+            .file_id = file_id,
+            .file_table = file_table,
+            .source = file_table.getSource(file_id),
             .current = 0,
             .col = 0,
             .row = 0,
-            .logger = ErrorLogger.init(file_name),
+            .logger = ErrorLogger.init(file_id),
         };
     }
 
@@ -182,7 +188,6 @@ pub const Lexer = struct {
         var run_progress = progress.start("Running", 0);
 
         inits.end();
-
         var runs: usize = 0;
         while (!self.isAtEnd()) {
             if (slow) {
@@ -203,6 +208,7 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = self.current,
                     .end = self.current,
+                    .file = self.file_id,
                     .kind = .newline,
                 });
                 continue;
@@ -250,6 +256,7 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = start,
                     .end = self.current,
+                    .file = self.file_id,
                     .kind = kind,
                 });
                 continue;
@@ -260,6 +267,7 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = start,
                     .end = self.current,
+                    .file = self.file_id,
                     .kind = kind,
                 });
                 continue;
@@ -288,6 +296,7 @@ pub const Lexer = struct {
                     .start = start + 1,
                     .end = self.current - 1,
                     .kind = .string_literal,
+                    .file = self.file_id,
                 });
                 continue;
             }
@@ -301,6 +310,7 @@ pub const Lexer = struct {
                     try tokens.append(allocator, .{
                         .start = start,
                         .end = self.current,
+                        .file = self.file_id,
                         .kind = k,
                     });
                     continue;
@@ -308,6 +318,7 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = start,
                     .end = self.current,
+                    .file = self.file_id,
                     .kind = .identifier,
                 });
                 continue;
@@ -323,6 +334,7 @@ pub const Lexer = struct {
                     try tokens.append(allocator, .{
                         .start = start,
                         .end = self.current,
+                        .file = self.file_id,
                         .kind = k,
                     });
                     continue;
@@ -331,6 +343,7 @@ pub const Lexer = struct {
                     .message = try std.fmt.allocPrint(allocator, "unknown processor directive '{s}'", .{str}),
                     .kind = .{ .LexError = LexError.UnknownDirective },
                     .start = start,
+                    .file = self.file_id,
                     .end = self.current,
                 });
                 continue;
@@ -343,6 +356,7 @@ pub const Lexer = struct {
                 try tokens.append(allocator, Token{
                     .start = start,
                     .end = self.current,
+                    .file = self.file_id,
                     .kind = .number_literal,
                 });
                 continue;
@@ -378,6 +392,7 @@ pub const Lexer = struct {
         try tokens.append(allocator, .{
             .start = 0,
             .end = 0,
+            .file = self.file_id,
             .kind = .eof,
         });
 

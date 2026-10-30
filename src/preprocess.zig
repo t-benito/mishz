@@ -183,7 +183,8 @@ fn include(self: *Preprocessor) !void {
     const s = self.advance();
     switch (s.kind) {
         .string_literal => {
-            const n = self.file_table.
+            const n = self.file_table.spanStr(self.file_id, s.start, s.end);
+            try self.inclFile(n, s.start, s.end);
         },
         .lt => {
             var name = std.ArrayList(u8).empty;
@@ -195,14 +196,14 @@ fn include(self: *Preprocessor) !void {
                 self.libc_path,
                 name.toOwnedSlice(self.allocator),
             });
-            try self.inclFile(path);
+            try self.inclFile(path, s.start, s.end);
         },
         else => {
             self.current -= 1;
             try self.logger.add(self.allocator, .{
                 .start = d.start,
                 .end = s.end,
-                .message = "expected string or '< >' after '#include'",
+                .message = "expected string or '<' after '#include'",
             });
         },
     }
@@ -317,6 +318,19 @@ fn skipLine(self: *Preprocessor) void {
 const lex = @import("lex.zig");
 
 fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !void {
+    var parent_node = self.root_node.start("Importing file", 1);
+    defer parent_node.end();
+
+    if (self.file_id == std.math.maxInt(u8)) {
+        try self.logger.add(self.allocator, .{
+            .start = start,
+            .end = end,
+            .message = "reached maximum file import limit (255)",
+            .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
+        });
+        return PreprocessorError.IncludeError;
+    }
+
     if (!std.mem.eql(u8, std.fs.path.extension(path), ".msh")) {
         try self.logger.add(self.allocator, .{
             .start = start,
@@ -326,7 +340,9 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
         return PreprocessorError.IncludeError;
     }
 
-    const file = std.Io.Dir.cwd().openFile(self.io, path, .{ .mode = .read_only, }) catch |e| {
+    const file = std.Io.Dir.cwd().openFile(self.io, path, .{
+        .mode = .read_only,
+    }) catch |e| {
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
@@ -337,7 +353,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
     };
     defer file.close(self.io);
 
-    var buf: [124]u8 = undefined;
+    var buf: [128]u8 = undefined;
     var reader = file.reader(self.io, &buf);
 
     const source = reader.interface.allocRemaining(self.allocator, .unlimited) catch |e| {
@@ -348,9 +364,18 @@ fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !vo
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
         return PreprocessorError.IncludeError;
-    }
+    };
     // now we can finally read it...
-    var lexer = lex.Lexer.init(source, path);
+    const id = try self.file_table.addFile(self.allocator, path, source);
+
+    var lexer = lex.Lexer.init(id, path);
+    const tokens = try lexer.run(self.allocator, &parent_node, self.slow, self.io);
+
+    var tl = try std.ArrayList(Token).initCapacity(self.allocator, self.tokens.len + tokens.len);
+    try tl.appendSlice(self.allocator, tokens);
+    try tl.appendSlice(self.allocator, self.tokens);
+
+    self.tokens = tl.toOwnedSlice(self.allocator);
 }
 
 fn replace(self: *Preprocessor) !bool {
