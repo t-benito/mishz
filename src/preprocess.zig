@@ -5,6 +5,7 @@ const lex = @import("lex.zig");
 const Token = lex.Token;
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
+const FileTable = @import("file_table.zig").FileTable;
 
 const Macro = struct {
     tokens: []Token,
@@ -18,11 +19,12 @@ pub const PreprocessorError = error{
     RecursiveMacro,
     UnterminatedDirective,
     NoMatchingDirective,
+    IncludeError,
 };
 
 current: usize = 0,
 
-source: []const u8,
+file_id: u8,
 tokens: []Token,
 macros: std.StringHashMap(Macro),
 
@@ -35,16 +37,24 @@ root_node: *const std.Progress.Node,
 slow: bool,
 io: std.Io,
 
-pub fn init(allocator: std.mem.Allocator, source: []const u8, file: []const u8, tokens: []Token, root_node: *const std.Progress.Node, slow: bool, io: std.Io) Preprocessor {
+libc_path: []const u8,
+file_table: *FileTable,
+
+pub fn init(allocator: std.mem.Allocator, file_id: u8, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, slow: bool, io: std.Io) Preprocessor {
     return Preprocessor{
-        .source = source,
         .tokens = tokens,
         .macros = .initContext(allocator, .{}),
-        .logger = ErrorLogger.init(file),
+        .logger = .init(file_id),
         .allocator = allocator,
         .root_node = root_node,
         .slow = slow,
         .io = io,
+        .libc_path = try std.fs.path.join(allocator, .{
+            try std.process.executableDirPathAlloc(io, allocator),
+            "libc",
+            "std",
+        }),
+        .file_table = file_table,
     };
 }
 
@@ -115,6 +125,7 @@ fn checkTkn(self: *Preprocessor) !void {
         .pre_ifdef => try self.ifdef(false),
         .pre_ifndef => try self.ifndef(false),
         .pre_define => try self.define(),
+        .pre_include => try self.include(),
         .pre_else, .pre_elif, .pre_endif => {
             const tkn = self.advance();
             try self.logger.add(self.allocator, .{
@@ -140,23 +151,59 @@ fn checkTknIf(self: *Preprocessor, discard: bool) error{
     UnexpectedToken,
     UnterminatedDirective,
     RecursiveMacro,
-    NoMatchingDirective, // THIS SUCKS OH MY GOD ZIG
+    NoMatchingDirective,
+    IncludeError, // THIS SUCKS OH MY GOD ZIG
 }!void {
     switch (self.peek().kind) {
         .pre_ifdef => try self.ifdef(discard),
         .pre_ifndef => try self.ifndef(discard),
         .pre_define => {
-            if (discard) {
-                self.skipLine();
-            } else {
+            if (discard)
+                self.skipLine()
+            else
                 try self.define();
-            }
+        },
+        .pre_include => {
+            if (discard)
+                self.skipLine()
+            else
+                try self.include();
         },
         .newline => _ = self.advance(),
         else => {
             const tkn = self.advance();
             if (!discard)
                 try self.out.append(self.allocator, tkn);
+        },
+    }
+}
+
+fn include(self: *Preprocessor) !void {
+    const d = self.advance();
+    const s = self.advance();
+    switch (s.kind) {
+        .string_literal => {
+            const n = self.file_table.
+        },
+        .lt => {
+            var name = std.ArrayList(u8).empty;
+            while (!self.isAtEnd() and self.peek().kind != .gt) {
+                const t = self.advance();
+                try name.appendSlice(self.allocator, self.file_table.spanStr(t.start, t.end));
+            }
+            const path = try std.fs.path.join(self.allocator, .{
+                self.libc_path,
+                name.toOwnedSlice(self.allocator),
+            });
+            try self.inclFile(path);
+        },
+        else => {
+            self.current -= 1;
+            try self.logger.add(self.allocator, .{
+                .start = d.start,
+                .end = s.end,
+                .message = "expected string or '< >' after '#include'",
+            });
         },
     }
 }
@@ -264,6 +311,46 @@ fn skipLine(self: *Preprocessor) void {
 
     if (!self.isAtEnd())
         _ = self.advance();
+}
+
+// needed here so import it HERE!!!
+const lex = @import("lex.zig");
+
+fn inclFile(self: *Preprocessor, path: []const u8, start: usize, end: usize) !void {
+    if (!std.mem.eql(u8, std.fs.path.extension(path), ".msh")) {
+        try self.logger.add(self.allocator, .{
+            .start = start,
+            .end = end,
+            .message = "file name does not end in .msh",
+        });
+        return PreprocessorError.IncludeError;
+    }
+
+    const file = std.Io.Dir.cwd().openFile(self.io, path, .{ .mode = .read_only, }) catch |e| {
+        try self.logger.add(self.allocator, .{
+            .start = start,
+            .end = end,
+            .message = self.allocator.print("encountered error opening file: {s}", @tagName(e)),
+            .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
+        });
+        return PreprocessorError.IncludeError;
+    };
+    defer file.close(self.io);
+
+    var buf: [124]u8 = undefined;
+    var reader = file.reader(self.io, &buf);
+
+    const source = reader.interface.allocRemaining(self.allocator, .unlimited) catch |e| {
+        try self.logger.add(self.allocator, .{
+            .start = start,
+            .end = end,
+            .message = self.allocator.print("encountered error reading file: {s}", @tagName(e)),
+            .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
+        });
+        return PreprocessorError.IncludeError;
+    }
+    // now we can finally read it...
+    var lexer = lex.Lexer.init(source, path);
 }
 
 fn replace(self: *Preprocessor) !bool {

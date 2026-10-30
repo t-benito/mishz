@@ -7,6 +7,7 @@ pub const Token = struct {
     start: usize,
     end: usize,
     kind: Kind,
+    file: u8,
 
     pub const Kind = enum {
         newline, // used in preprocessor

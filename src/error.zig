@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const FileTable = @import("file_table.zig").FileTable;
+
 const Lex_Error = @import("lex.zig").LexError;
 const Parse_Error = @import("parse.zig").ParseError;
 const Type_Error = @import("sema.zig").TypeError;
@@ -34,12 +36,14 @@ const RESET = "\x1b[0m";
 
 pub const ErrorLogger = struct {
     errors: std.ArrayList(Error),
-    file: []const u8,
+    file: u8,
+    file_table: *FileTable,
 
-    pub fn init(file: []const u8) ErrorLogger {
+    pub fn init(file_id: u8, file_table: *FileTable) ErrorLogger {
         return .{
             .errors = std.ArrayList(Error).empty,
-            .file = file,
+            .file = file_id,
+            .file_table = file_table,
         };
     }
 
@@ -58,7 +62,8 @@ pub const ErrorLogger = struct {
         return allocator.print("E{d}", .{err}) catch "(OUT OF MEMORY)";
     }
 
-    pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator, source: []const u8) bool {
+    pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator) bool {
+        const source = self.file_table.getSource(self.file);
         defer self.errors.clearAndFree(allocator);
         if (self.errors.items.len == 0) return false;
 
