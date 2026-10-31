@@ -16,16 +16,25 @@ const CLIArgs = struct {
     tokens: u32,
 };
 
+const BLUE = "\x1b[1;34m";
+const GREEN = "\x1b[1;32m";
+const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
+
+    const stdout = std.Io.File.stdout();
 
     const params = comptime clap.parseParamsComptime(
         \\-h, --help            Display this message
         \\-s, --slow            Artificially slow down the compiler (use this if you want to debug or if you want to see progress)
         \\-a, --ast             Print the AST instead of compiling it
         \\-t, --tokens          Print the tokens instead of compiling it
-        \\<FILE>...             The source file to compile (.msh)
+        \\zen                   See the current zen
+        \\<FILE>                The source file to compile (.msh)
     );
 
     const parsers = comptime .{
@@ -43,20 +52,23 @@ pub fn main(init: std.process.Init) !void {
     };
     defer res.deinit();
 
-    if (res.args.help != 0 or res.positionals[0].len == 0) {
+    if (res.args.help != 0 or res.positionals[0] == null) {
         std.debug.print("Mish compiler v0.0.2p\n\nUsage:\n", .{});
         return clap.helpToFile(io, .stderr(), clap.Help, &params, .{});
     }
 
-    for (res.positionals[0]) |path| {
-        const args = CLIArgs{
-            .ast = res.args.ast,
-            .help = res.args.help,
-            .slow = res.args.slow,
-            .tokens = res.args.tokens,
-        };
-        try compileFile(path, init, args);
+    if (std.mem.eql(u8, res.positionals[0].?, "zen")) {
+        try printZen(io, allocator, stdout);
+        return;
     }
+
+    const args = CLIArgs{
+        .ast = res.args.ast,
+        .help = res.args.help,
+        .slow = res.args.slow,
+        .tokens = res.args.tokens,
+    };
+    try compileFile(res.positionals[0].?, init, args);
 }
 
 fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
@@ -162,4 +174,36 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     );
     checker.run() catch std.process.exit(1);
     checker_progress.end();
+}
+
+fn printZen(io: std.Io, allocator: std.mem.Allocator, stdout: std.Io.File) !void {
+    const txt = try allocator.print(
+        \\{s}Zen of Mish{s}
+        \\
+        \\{s}1{s}{s}.{s} {s}Compilation speed over runtime speed{s}: The compiler should feel like an interpreter.
+        \\{s}2{s}{s}.{s} {s}Explicit over implicit{s}: Code should say what it does, and do only what it says.
+        \\{s}3{s}{s}.{s} {s}No hidden control flow{s}: No hidden constructors, destructors, or operator overloads.
+        \\{s}4{s}{s}.{s} {s}Simplicity over cleverness{s}: The compiler is purposefully kept simple.
+    , .{ // lazyvim, not my fault.
+        // title
+        GREEN, RESET,
+        // 1
+        BLUE,  RESET,
+        DIM,   RESET,
+        BOLD,  RESET,
+        // 2
+        BLUE,  RESET,
+        DIM,   RESET,
+        BOLD,  RESET,
+        // 3
+        BLUE,  RESET,
+        DIM,   RESET,
+        BOLD,  RESET,
+        // 4
+        BLUE,  RESET,
+        DIM,   RESET,
+        BOLD,  RESET,
+    });
+    try stdout.writeStreamingAll(io, txt);
+    allocator.free(txt);
 }
