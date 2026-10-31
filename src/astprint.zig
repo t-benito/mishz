@@ -79,7 +79,7 @@ pub fn printAst(nodes: []const *Node, indent: usize) void {
             },
             .if_stmt => {
                 printAst((&node.data.if_stmt.cond)[0..1], child_indent);
-                printAst(node.data.if_stmt.body, child_indent);
+                printAst((&node.data.if_stmt.body)[0..1], child_indent);
                 if (node.data.if_stmt.else_branch) |eb| {
                     printAst((&eb)[0..1], child_indent);
                 }

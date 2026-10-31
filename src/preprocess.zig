@@ -17,6 +17,7 @@ const Macro = struct {
 pub const PreprocessorError = error{
     UnexpectedToken,
     RecursiveMacro,
+    RecursiveInclude,
     UnterminatedDirective,
     NoMatchingDirective,
     IncludeError,
@@ -47,7 +48,7 @@ pub fn init(allocator: std.mem.Allocator, file_id: u8, tokens: []Token, root_nod
         .source = file_table.getSource(file_id),
         .tokens = tokens,
         .macros = .initContext(allocator, .{}),
-        .logger = .init(file_id, file_table),
+        .logger = .init(file_table),
         .allocator = allocator,
         .root_node = root_node,
         .slow = slow,
@@ -92,6 +93,7 @@ fn expect(self: *Preprocessor, expected: Token.Kind) !Token {
         try self.logger.add(self.allocator, .{
             .start = tkn.start,
             .end = tkn.end,
+            .file = tkn.file,
             .message = "unexpected token",
             .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
         });
@@ -130,6 +132,7 @@ fn checkTkn(self: *Preprocessor) !void {
             try self.logger.add(self.allocator, .{
                 .start = tkn.start,
                 .end = tkn.end,
+                .file = self.peek().file,
                 .kind = .{ .PreprocessorError = PreprocessorError.NoMatchingDirective },
                 .message = switch (tkn.kind) {
                     .pre_else => "unexpected '#else' without matching '#ifdef' or '#ifndef'",
@@ -192,7 +195,7 @@ fn include(self: *Preprocessor) !void {
                 n,
             });
 
-            try self.inclFile(total, false, s.start, s.end);
+            try self.inclFile(total, false, s.start, s.end, s.file);
         },
         .lt => {
             var name = std.ArrayList(u8).empty;
@@ -206,13 +209,14 @@ fn include(self: *Preprocessor) !void {
                 self.libc_path,
                 try name.toOwnedSlice(self.allocator),
             });
-            try self.inclFile(path, true, s.start, s.end);
+            try self.inclFile(path, true, s.start, s.end, s.file);
         },
         else => {
             self.current -= 1;
             try self.logger.add(self.allocator, .{
                 .start = d.start,
                 .end = s.end,
+                .file = s.file,
                 .message = "expected string or '<' after '#include'",
                 .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
             });
@@ -326,26 +330,46 @@ fn skipLine(self: *Preprocessor) void {
         _ = self.advance();
 }
 
-fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, start: usize, end: usize) anyerror!void {
+fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, start: usize, end: usize, filei: u8) anyerror!void {
     var parent_node = self.root_node.start("Including file", 1);
     defer parent_node.end();
-
+    // check for integer overflow
     if (self.file_id == std.math.maxInt(u8)) {
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
+            .file = filei,
             .message = "reached maximum file import limit (255)",
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
         return PreprocessorError.IncludeError;
     }
-
+    // check extension
     if (!std.mem.eql(u8, std.fs.path.extension(path), ".msh")) {
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
+            .file = filei,
             .message = "file name does not end in .msh",
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
+        });
+        return PreprocessorError.IncludeError;
+    }
+    // check for same path
+    const cleanp1 = try std.fs.path.resolveAlloc(self.allocator, &.{path});
+    const cleanp2 = try std.fs.path.resolveAlloc(self.allocator, &.{self.file_table.getPath(self.file_id)});
+    if (std.mem.eql(u8, cleanp1, cleanp2)) {
+        try self.logger.add(self.allocator, .{
+            .start = start,
+            .end = end,
+            .file = filei,
+            .message = "recursive include",
+            .kind = .{ .PreprocessorError = PreprocessorError.RecursiveInclude },
+            .note = .{
+                .start = start,
+                .end = end,
+                .message = "a file including itself would result in an infinite loop, crashing the compiler",
+            },
         });
         return PreprocessorError.IncludeError;
     }
@@ -356,6 +380,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
+            .file = filei,
             .message = try self.allocator.print("encountered error opening file: {s}", .{@errorName(e)}),
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
             .note = if (from_libc) .{
@@ -375,6 +400,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
+            .file = filei,
             .message = try self.allocator.print("encountered error reading file: {s}", .{@errorName(e)}),
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
@@ -442,6 +468,7 @@ fn expand(self: *Preprocessor, tkn: Token, new: *std.ArrayList(Token)) !bool {
             try self.logger.add(self.allocator, .{
                 .start = macro.start,
                 .end = macro.end,
+                .file = tkn.file,
                 .kind = .{ .PreprocessorError = PreprocessorError.RecursiveMacro },
                 .message = "recursive macro",
                 .note = .{

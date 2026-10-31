@@ -118,7 +118,7 @@ pub const Data = union {
     },
     if_stmt: struct {
         cond: *Node,
-        body: []*Node,
+        body: *Node,
         else_branch: ?*Node,
     },
     for_stmt: struct {
@@ -230,7 +230,7 @@ pub const Parser = struct {
             .tokens = tokens,
             .allocator = allocator,
             .io = io,
-            .logger = .init(file_id, file_table),
+            .logger = .init(file_table),
             .types = std.ArrayList(TypeNode).empty,
             .root_node = progress,
             .slow = slow,
@@ -266,6 +266,7 @@ pub const Parser = struct {
             .message = fmt,
             .start = t.start,
             .end = t.end,
+            .file = t.file,
             .kind = .{ .ParseError = ParseError.UnexpectedToken },
         });
         self.current += 1;
@@ -412,6 +413,7 @@ pub const Parser = struct {
             .kind = .{ .ParseError = ParseError.ExpectedTopLevelStatement },
             .start = found_top.start,
             .end = self.next().end,
+            .file = found_top.file,
             .message = try std.fmt.allocPrint(self.allocator, "expected a top-level statement (function, class or global variable), found '{s}' ({s})", .{ self.tokenText(found_top), @tagName(found_top.kind) }),
         });
         return ParseError.ExpectedTopLevelStatement;
@@ -611,6 +613,7 @@ pub const Parser = struct {
                     .kind = .{ .ParseError = ParseError.ExpectedExpression },
                     .start = lhs_t.start,
                     .end = lhs_t.end,
+                    .file = lhs_t.file,
                     .message = try std.fmt.allocPrint(self.allocator, "expected an expression, found '{s}' ({s})", .{ self.tokenText(lhs_t), @tagName(lhs_t.kind) }),
                 });
                 return ParseError.ExpectedExpression;
@@ -1220,6 +1223,7 @@ pub const Parser = struct {
                         try self.logger.add(self.allocator, .{
                             .start = self.tokens[mut_t].start,
                             .end = self.tokens[mut_t].end,
+                            .file = self.tokens[mut_t].file,
                             .message = "function cannot be 'mut'",
                             .kind = .{ .ParseError = ParseError.MutFunction },
                         });
@@ -1270,6 +1274,7 @@ pub const Parser = struct {
                                 .kind = .{ .ParseError = ParseError.ExpectedTypeExpression },
                                 .start = found_ty.start,
                                 .end = self.next().end, // cant get any better error highlighting...
+                                .file = found_ty.file,
                                 .message = try std.fmt.allocPrint(self.allocator, "expected type of parameter, found '{s}' ({s})", .{ self.tokenText(found_ty), @tagName(found_ty.kind) }),
                                 .note = .{
                                     .message = "function declared here",
@@ -1311,6 +1316,7 @@ pub const Parser = struct {
                         try self.logger.add(self.allocator, .{
                             .start = self.tokens[mut_t].start,
                             .end = self.tokens[mut_t].end,
+                            .file = self.tokens[mut_t].file,
                             .message = "functions cannot be 'mut'",
                             .kind = .{ .ParseError = ParseError.MutFunction },
                         });
@@ -1419,14 +1425,25 @@ pub const Parser = struct {
         _ = try self.expect(.close_paren, &if_node);
         try self.sleepIfSlow(50);
 
-        var body: []*Node = undefined;
+        var body: *Node = undefined;
         if (self.matches(.open_body)) {
+            const sstart = self.current;
             _ = try self.expect(.open_body, &if_node);
-            body = try self.parseBlock(&if_node);
+            body = try self.allocator.create(Node);
+            body.* = .{
+                .data = .{
+                    .block = .{
+                        .body = try self.parseBlock(&if_node),
+                    },
+                },
+                .tag = .block,
+                .start = self.tokens[sstart].start,
+                .end = self.peek().end,
+                .file = self.tokens[sstart].file,
+            };
             _ = try self.expect(.close_body, &if_node);
         } else {
-            body = try self.allocator.alloc(*Node, 1);
-            body[0] = try self.parseStmt(&if_node);
+            body = try self.parseStmt(&if_node);
         }
 
         var else_branch: ?*Node = undefined;
@@ -1601,6 +1618,7 @@ pub const Parser = struct {
                 .kind = .{ .ParseError = ParseError.ExpectedVariableStmt },
                 .start = errstart1,
                 .end = self.next().end,
+                .file = self.peek().file,
                 .message = try std.fmt.allocPrint(self.allocator, "expected a variable declaration or ';' to start the 'for' header, found '{s}' ({s})", .{ self.tokenText(found_var), @tagName(found_var.kind) }),
             });
             return ParseError.ExpectedVariableStmt;
@@ -1626,6 +1644,7 @@ pub const Parser = struct {
         if (self.matches(.open_body)) {
             const sstart = self.current;
             _ = try self.expect(.open_body, &parent_node);
+            body = try self.allocator.create(Node);
             body.* = .{
                 .data = .{
                     .block = .{
@@ -1789,6 +1808,7 @@ pub const Parser = struct {
                     try self.logger.add(self.allocator, .{
                         .start = n.start,
                         .end = n.end,
+                        .file = n.file,
                         .message = "structs cannot have default values",
                         .kind = .{ .ParseError = ParseError.UnexpectedDefaultValue },
                     });
@@ -1799,6 +1819,7 @@ pub const Parser = struct {
                 try self.logger.add(self.allocator, .{
                     .start = self.peek().start,
                     .end = self.peek().end,
+                    .file = self.peek().file,
                     .message = "expected field in struct body",
                     .kind = .{ .ParseError = ParseError.UnexpectedKwInStruct },
                 });
@@ -1861,13 +1882,28 @@ pub const Parser = struct {
             };
             try self.sleepIfSlow(50);
             return node;
+        } else if (self.peek().kind == .kw_struct) {
+            const n = try self.allocator.create(Node);
+            n.* = .{
+                .data = .{
+                    .pub_stmt = .{
+                        .stmt = try self.parseStruct(&this_node),
+                    },
+                },
+                .tag = .pub_stmt,
+                .start = self.tokens[start].start,
+                .end = self.peek().end,
+                .file = self.tokens[start].file,
+            };
+            return n;
         }
         const found_pub = self.peek();
         try self.logger.add(self.allocator, .{
             .kind = .{ .ParseError = ParseError.ExpectedStatement },
             .start = found_pub.start,
             .end = found_pub.end,
-            .message = try std.fmt.allocPrint(self.allocator, "expected a variable or function after 'pub', found '{s}' ({s})", .{ self.tokenText(found_pub), @tagName(found_pub.kind) }),
+            .file = found_pub.file,
+            .message = try std.fmt.allocPrint(self.allocator, "expected a variable, function or 'struct' after 'pub', found '{s}' ({s})", .{ self.tokenText(found_pub), @tagName(found_pub.kind) }),
         });
         return ParseError.ExpectedStatement;
     }

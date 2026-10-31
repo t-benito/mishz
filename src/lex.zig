@@ -154,7 +154,7 @@ pub const Lexer = struct {
             .current = 0,
             .col = 0,
             .row = 0,
-            .logger = .init(file_id, file_table),
+            .logger = .init(file_table),
         };
     }
 
@@ -291,6 +291,7 @@ pub const Lexer = struct {
                         .message = "unclosed string literal (missing closing '\"')",
                         .start = start,
                         .end = self.current,
+                        .file = self.file_id,
                     });
                     continue;
                 }
@@ -346,6 +347,7 @@ pub const Lexer = struct {
                     .kind = .{ .LexError = LexError.UnknownDirective },
                     .start = start,
                     .end = self.current,
+                    .file = self.file_id,
                 });
                 continue;
             }
@@ -372,6 +374,7 @@ pub const Lexer = struct {
                     .kind = .{ .LexError = LexError.UnknownCharacter },
                     .start = start,
                     .end = self.current,
+                    .file = self.file_id,
                     .note = .{
                         .start = start,
                         .end = self.current,
@@ -388,6 +391,7 @@ pub const Lexer = struct {
                 .kind = .{ .LexError = LexError.UnknownCharacter },
                 .start = start,
                 .end = self.current,
+                .file = self.file_id,
             });
         }
         try tokens.append(allocator, .{

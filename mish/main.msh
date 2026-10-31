@@ -1,30 +1,63 @@
-#include "otherfile.msh"
-#include "otherfile.msh"
-#include "otherfile.msh"
+//#include "std/io.msh"
+//#include "std/math.msh"
 
-#define SECURE_NUMBER std:fmt:putsln("4");
+pub struct std:collections:array:Vector2D {
+  i64 x;
+  i64 y;
+}
+
+pub struct std:game:entities:player:PlayerData {
+  []u8 name;
+  i32 mut health;
+  i32 score;
+  std:collections:array:Vector2D position;
+}
 
 pub i32 main {
-    SECURE_NUMBER
-    SECURE_NUMBER
-    SECURE_NUMBER
+  std:fmt:out:io:puts:putsln:flush("Initializing game engine...\n");
 
+  // Initializing a mutable tracker using long naming convention
+  i32 mut current:active:player:count = 0;
 
-    i32 this_is_a_variable = 0;
-    i32 mut this_is_a_mutable_variable = 0;
-}
-
-struct Player {
-  i32 hp;
-  []u8 name;
-  []u8 class;
-}
-
-i32 Player:new(i32 hp, []u8 class) {
-  ret Player{
-    .hp = hp;
-    .class = class;
-    .name = "Adventurer";
+  // Initializing our player struct
+  std:game:entities:player:PlayerData mut player1 = std:game:entities:player:PlayerData {
+    .name = "Benito";
+    .health = 100;
+    .score = 0;
+    .position = std:collections:array:Vector2D { .x = 10; .y = 20; };
   };
+
+  // Using an if statement to check health status
+  if (player1.health == 100) {
+    std:fmt:out:io:puts:putsln:flush("Player is at full health!\n");
+  }
+
+  std:fmt:out:io:puts:putsln:flush("Running simulation loops...\n");
+
+  for (i32 tick = 0; tick < 5; tick++) {
+    player1.health -= 10;
+    player1.score += 150;
+    
+    if (player1.health < 70) {
+      std:fmt:out:io:puts:putsln:flush("Warning: Player health dropped below 70!\n");
+    }
+  }
+
+  // Final status report
+  std:fmt:out:io:puts:putsln:flush("Simulation complete.\n");
+  
+  ret 0;
+}
+
+pub void std:fmt:puts:ln([]u8 fmt) {
+  // Built-in handling for printing with a newline
+}
+
+pub void std:fmt:puts([]u8 fmt) {
+  // Built-in handling for raw string printing
+}
+
+pub void std:fmt:out:io:puts:putsln:flush([]u8 message) {
+  // Implementation of your deep namespace output function
 }
 

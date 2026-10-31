@@ -22,6 +22,8 @@ const Symbol = struct {
     kind: Symbol.Kind,
     start: usize,
     end: usize,
+    file: u8,
+    public: bool = true,
 
     pub const Kind = enum {
         vari,
@@ -135,7 +137,7 @@ pub const Checker = struct {
             .allocator = allocator,
             .io = io,
             .root_node = root_node,
-            .logger = .init(file_id, file_table),
+            .logger = .init(file_table),
 
             .slow = slow,
             .string_ty_id = 0,
@@ -146,20 +148,16 @@ pub const Checker = struct {
         if (self.slow) try std.Io.sleep(self.io, std.Io.Duration.fromMilliseconds(milliseconds), .awake);
     }
 
-    fn spanStr(self: *Checker, start: usize, end: usize) []const u8 {
-        return self.source[start..end];
-    }
-
     pub fn run(self: *Checker) !void {
         try self.buildCache(); // IMPORTANT
 
         for (self.ast) |node| {
-            try self.sleepIfSlow(50);
-            try self.precheckTop(node, self.root_node);
+            try self.sleepIfSlow(80);
+            try self.precheckTop(node, self.root_node, false);
         }
 
         for (self.ast) |node| {
-            try self.sleepIfSlow(50);
+            try self.sleepIfSlow(100);
             self.checkTop(node, self.root_node) catch {};
         }
         if (self.logger.dump(self.allocator)) {
@@ -167,8 +165,8 @@ pub const Checker = struct {
         }
     }
 
-    fn precheckTop(self: *Checker, node: *Node, previous: *const std.Progress.Node) !void {
-        var parent_node = previous.start("Prechecking top-level statement", 1);
+    fn precheckTop(self: *Checker, node: *Node, previous: *const std.Progress.Node, public: bool) !void {
+        var parent_node = previous.start("Precheck top-level statement", 1);
         defer parent_node.end();
 
         try self.scope_map.enter();
@@ -187,11 +185,17 @@ pub const Checker = struct {
                 }
 
                 try self.scope_map.define(
-                    self.spanStr(self.tokens[node.data.fn_stmt.name].start, self.tokens[node.data.fn_stmt.name].end),
+                    self.file_table.spanStr(
+                        node.file,
+                        self.tokens[node.data.fn_stmt.name].start,
+                        self.tokens[node.data.fn_stmt.name].end,
+                    ),
                     Symbol{
                         .kind = .func,
                         .start = node.start,
                         .end = node.end,
+                        .file = node.file,
+                        .public = public,
                         .data = .{
                             .func = .{
                                 .params = param_types,
@@ -204,11 +208,17 @@ pub const Checker = struct {
                 if (node.data.fn_stmt.params) |params| {
                     for (params) |param| {
                         try self.scope_map.define(
-                            self.spanStr(self.tokens[param.data.param.name].start, self.tokens[param.data.param.name].end),
+                            self.file_table.spanStr(
+                                param.file,
+                                self.tokens[param.data.param.name].start,
+                                self.tokens[param.data.param.name].end,
+                            ),
                             Symbol{
                                 .kind = .param,
                                 .start = param.start,
                                 .end = param.end,
+                                .file = param.file,
+                                .public = true, // always, TODO mayne flse??ß)
                                 .data = .{
                                     .param = param.data.param.ty,
                                 },
@@ -221,14 +231,22 @@ pub const Checker = struct {
                 var this_node = parent_node.start("Variable", 0);
                 defer this_node.end();
                 try self.scope_map.define(
-                    self.spanStr(self.tokens[node.data.var_stmt.name].start, self.tokens[node.data.var_stmt.name].end),
+                    self.file_table.spanStr(node.file, self.tokens[node.data.var_stmt.name].start, self.tokens[node.data.var_stmt.name].end),
                     Symbol{
                         .kind = .vari,
                         .start = node.start,
                         .end = node.end,
+                        .file = node.file,
+                        .public = public,
                         .data = .{ .vari = node.data.var_stmt.ty },
                     },
                 );
+            },
+            .pub_stmt => {
+                parent_node.setName("Precheck pub top-level statement");
+                try self.sleepIfSlow(25);
+
+                try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
             },
             else => {},
         }
@@ -310,10 +328,11 @@ pub const Checker = struct {
             .var_stmt => {
                 const v = &stmt.data.var_stmt;
                 try self.scope_map.define(
-                    self.spanStr(self.tokens[v.name].start, self.tokens[v.name].end),
+                    self.file_table.spanStr(stmt.file, self.tokens[v.name].start, self.tokens[v.name].end),
                     Symbol{
                         .start = stmt.start,
                         .end = stmt.end,
+                        .file = stmt.file,
                         .kind = .vari,
                         .data = .{ .vari = v.ty },
                     },
@@ -326,6 +345,7 @@ pub const Checker = struct {
                         try self.logger.add(self.allocator, Error{
                             .start = val.start,
                             .end = val.end,
+                            .file = val.file,
                             .kind = .{ .TypeError = TypeError.MismatchedVariableType },
                             .message = try std.fmt.allocPrint(
                                 self.allocator,
@@ -344,6 +364,7 @@ pub const Checker = struct {
                         try self.logger.add(self.allocator, Error{
                             .start = val.start,
                             .end = val.end,
+                            .file = val.file,
                             .kind = .{ .TypeError = TypeError.TypeMismatch },
                             .message = try std.fmt.allocPrint(
                                 self.allocator,
@@ -361,6 +382,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = stmt.start,
                         .end = stmt.end,
+                        .file = stmt.file,
                         .kind = .{ .TypeError = TypeError.TypeMismatch },
                         .message = "expected non-void return value",
                         .note = if (fn_start) |fn_stmt| Note{
@@ -377,6 +399,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = stmt.data.if_stmt.cond.start,
                         .end = stmt.data.if_stmt.cond.end,
+                        .file = stmt.data.if_stmt.cond.file,
                         .kind = .{ .TypeError = TypeError.TypeMismatch },
                         .message = "condition of an if statement must be a bool",
                     });
@@ -401,6 +424,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = stmt.start,
                         .end = stmt.end,
+                        .file = stmt.file,
                         .kind = .{ .TypeError = TypeError.TypeMismatch },
                         .message = try std.fmt.allocPrint(
                             self.allocator,
@@ -417,7 +441,7 @@ pub const Checker = struct {
     fn checkExpr(self: *Checker, node: *Node) !Type {
         return switch (node.tag) {
             .identifier => blk: {
-                const ident_str = self.spanStr(node.start, node.end);
+                const ident_str = self.file_table.spanStr(node.file, node.start, node.end);
                 if (self.scope_map.lookup(ident_str)) |sym| {
                     break :blk switch (sym.kind) {
                         .vari => self.types.items[sym.data.vari].ty,
@@ -428,6 +452,7 @@ pub const Checker = struct {
                 try self.logger.add(self.allocator, Error{
                     .start = node.start,
                     .end = node.end,
+                    .file = node.file,
                     .kind = .{ .TypeError = TypeError.UnknownType },
                     .message = try std.fmt.allocPrint(self.allocator, "use of undeclared identifier '{s}'", .{ident_str}),
                 });
@@ -435,7 +460,7 @@ pub const Checker = struct {
             },
             .call => blk: {
                 const c = &node.data.call;
-                const callee_ident = self.spanStr(c.callee.start, c.callee.end);
+                const callee_ident = self.file_table.spanStr(c.callee.file, c.callee.start, c.callee.end);
                 if (self.scope_map.lookup(callee_ident)) |sym| {
                     if (sym.kind == .func) {
                         for (c.args, 0..) |arg, idx| {
@@ -446,6 +471,7 @@ pub const Checker = struct {
                                     try self.logger.add(self.allocator, Error{
                                         .start = arg.start,
                                         .end = arg.end,
+                                        .file = arg.file,
                                         .kind = .{ .TypeError = TypeError.TypeMismatch },
                                         .message = try std.fmt.allocPrint(
                                             self.allocator,
@@ -453,7 +479,7 @@ pub const Checker = struct {
                                             .{ @tagName(expected_ty), @tagName(arg_ty) },
                                         ),
                                     });
-                                }
+                                } // this nesting sucks
                             }
                         }
                         break :blk self.types.items[sym.data.func.returns].ty;
@@ -466,6 +492,7 @@ pub const Checker = struct {
                 try self.logger.add(self.allocator, Error{
                     .start = c.callee.start,
                     .end = c.callee.end,
+                    .file = c.callee.file,
                     .kind = .{ .TypeError = TypeError.UnexpectedType },
                     .message = try std.fmt.allocPrint(self.allocator, "cannot call non-function '{s}'", .{callee_ident}),
                 });
@@ -474,7 +501,11 @@ pub const Checker = struct {
             .property_access => blk: {
                 const pa = &node.data.property_access;
                 const target_ty = try self.checkExpr(pa.target);
-                const prop_name = self.spanStr(self.tokens[pa.name].start, self.tokens[pa.name].end);
+                const prop_name = self.file_table.spanStr(
+                    self.tokens[pa.name].file,
+                    self.tokens[pa.name].start,
+                    self.tokens[pa.name].end,
+                );
 
                 switch (target_ty) {
                     .slice => |inner_id| {
@@ -496,6 +527,7 @@ pub const Checker = struct {
                 try self.logger.add(self.allocator, Error{
                     .start = node.start,
                     .end = node.end,
+                    .file = node.file,
                     .kind = .{ .TypeError = TypeError.UnexpectedType },
                     .message = try std.fmt.allocPrint(self.allocator, "type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
                 });
@@ -510,6 +542,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = aa.value.start,
                         .end = aa.value.end,
+                        .file = aa.value.file,
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
                         .message = "array index must be an integer",
                     });
@@ -522,6 +555,7 @@ pub const Checker = struct {
                         try self.logger.add(self.allocator, Error{
                             .start = aa.target.start,
                             .end = aa.target.end,
+                            .file = aa.target.file,
                             .kind = .{ .TypeError = TypeError.UnexpectedType },
                             .message = try std.fmt.allocPrint(self.allocator, "cannot index non-indexable type '{s}'", .{@tagName(target_ty)}),
                         });
@@ -533,7 +567,11 @@ pub const Checker = struct {
             .integer => .i32,
             .builtin => blk: {
                 const b = &node.data.builtin;
-                const name_str = self.spanStr(self.tokens[b.name].start, self.tokens[b.name].end);
+                const name_str = self.file_table.spanStr(
+                    self.tokens[b.name].file,
+                    self.tokens[b.name].start,
+                    self.tokens[b.name].end,
+                );
                 _ = name_str;
                 // STUB:
                 // TODO
@@ -567,6 +605,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = node.start,
                         .end = node.end,
+                        .file = node.file,
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
                         .message = "binary operations only accept floats, unsigned integers or integers", // for now
                     });
@@ -578,8 +617,8 @@ pub const Checker = struct {
                     rhs,
                     node.start,
                     node.end,
-                    try std.fmt.allocPrint(
-                        self.allocator,
+                    node.file,
+                    try self.allocator.print(
                         "incompatible types {s} and {s} in binary operation",
                         .{ @tagName(lhs), @tagName(rhs) },
                     ),
@@ -593,6 +632,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = node.start,
                         .end = node.end,
+                        .file = node.file,
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
                         .message = try std.fmt.allocPrint(self.allocator, "unexpected type {s}", .{@tagName(rhs)}),
                         .note = .{
@@ -614,6 +654,7 @@ pub const Checker = struct {
                     try self.logger.add(self.allocator, Error{
                         .start = node.start,
                         .end = node.end,
+                        .file = node.file,
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
                         .message = try std.fmt.allocPrint(self.allocator, "unexpected type {s}", .{@tagName(rhs)}),
                         .note = Note{
@@ -630,12 +671,13 @@ pub const Checker = struct {
         };
     }
 
-    fn matchTypes(self: *Checker, lhs: Type, rhs: Type, start: usize, end: usize, message: []const u8, note: ?Note) !void {
+    fn matchTypes(self: *Checker, lhs: Type, rhs: Type, start: usize, end: usize, file: u8, message: []const u8, note: ?Note) !void {
         if (isTyEql(lhs, rhs))
             return;
         try self.logger.add(self.allocator, Error{
             .start = start,
             .end = end,
+            .file = file,
             .kind = .{ .TypeError = TypeError.IncompatibleTypes },
             .message = message,
             .note = note,

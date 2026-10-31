@@ -23,6 +23,7 @@ pub const Note = struct {
 pub const Error = struct {
     message: []const u8,
     kind: ErrorType,
+    file: u8,
     start: usize,
     end: usize,
     note: ?Note = null,
@@ -36,13 +37,11 @@ const RESET = "\x1b[0m";
 
 pub const ErrorLogger = struct {
     errors: std.ArrayList(Error),
-    file: u8,
     file_table: *FileTable,
 
-    pub fn init(file_id: u8, file_table: *FileTable) ErrorLogger {
+    pub fn init(file_table: *FileTable) ErrorLogger {
         return .{
             .errors = std.ArrayList(Error).empty,
-            .file = file_id,
             .file_table = file_table,
         };
     }
@@ -51,35 +50,73 @@ pub const ErrorLogger = struct {
         try self.errors.append(allocator, err);
     }
 
-    fn kindName(allocator: std.mem.Allocator, kind: ErrorType) []const u8 {
-        var err: usize = @as(usize, @intCast(@backingInt(kind))) * 1000;
-        switch (kind) {
-            .ParseError => |e| err += @intFromError(e),
-            .LexError => |e| err += @intFromError(e),
-            .TypeError => |e| err += @intFromError(e),
-            .PreprocessorError => |e| err += @intFromError(e),
+    fn hashEStr(str: []const u8) u32 {
+        var h: u32 = 237332;
+        for (str) |c| {
+            h ^= c;
+            h = h *% 162324;
         }
-        return allocator.print("E{d}", .{err}) catch "(OUT OF MEMORY)";
+        return h % 10000;
+    }
+
+    fn kindName(allocator: std.mem.Allocator, kind: ErrorType) []const u8 {
+        const errname = switch (kind) {
+            .LexError => |e| @errorName(e),
+            .PreprocessorError => |e| @errorName(e),
+            .ParseError => |e| @errorName(e),
+            .TypeError => |e| @errorName(e),
+        };
+        return allocator.print("E{d}", .{hashEStr(errname)}) catch "E-1";
     }
 
     pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator) bool {
-        const source = self.file_table.getSource(self.file);
         defer self.errors.clearAndFree(allocator);
         if (self.errors.items.len == 0) return false;
 
         for (self.errors.items, 0..) |err, idx| {
+            const source = self.file_table.getSource(err.file);
+            const path = self.file_table.getPath(err.file);
+
             if (idx > 0) std.debug.print("\n", .{});
-            self.render(allocator, source, kindName(allocator, err.kind), err.message, err.start, err.end, false) catch {
+
+            render(
+                allocator,
+                source,
+                path,
+                kindName(allocator, err.kind),
+                err.message,
+                err.start,
+                err.end,
+                false,
+            ) catch {
                 std.debug.print("{s}error{s}: {s} (could not render snippet)\n", .{ RED, RESET, err.message });
             };
             if (err.note) |n| {
-                self.render(allocator, source, "note", n.message, n.start, n.end, true) catch {};
+                render(
+                    allocator,
+                    source,
+                    path,
+                    "note",
+                    n.message,
+                    n.start,
+                    n.end,
+                    true,
+                ) catch {};
             }
         }
         return true;
     }
 
-    fn render(self: *ErrorLogger, allocator: std.mem.Allocator, source: []const u8, label: []const u8, message: []const u8, start: usize, end: usize, is_note: bool) !void {
+    fn render(
+        allocator: std.mem.Allocator,
+        source: []const u8,
+        path: []const u8,
+        label: []const u8,
+        message: []const u8,
+        start: usize,
+        end: usize,
+        is_note: bool,
+    ) !void {
         const s = @min(start, source.len);
         var e = @min(end, source.len);
         if (e <= s) e = @min(s + 1, source.len);
@@ -99,7 +136,7 @@ pub const ErrorLogger = struct {
         if (is_note) {
             std.debug.print("\n{s}note{s}: {s}\n", .{ BLUE, RESET, message });
         } else {
-            std.debug.print("{s}{s}{s}: {s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, self.file_table.getPath(self.file), RESET, RED, RESET, DIM, label, RESET, message });
+            std.debug.print("{s}{s}{s}: {s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, path, RESET, RED, RESET, DIM, label, RESET, message });
         }
         std.debug.print(" {s}-->{s} {d}:{d}\n\n", .{ CYAN, RESET, line, col });
 
