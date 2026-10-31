@@ -248,7 +248,7 @@ pub const Checker = struct {
 
                 try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
             },
-            else => {},
+            else => unreachable,
         }
     }
 
@@ -304,20 +304,28 @@ pub const Checker = struct {
     }
 
     fn checkTop(self: *Checker, node: *Node, previous: *const std.Progress.Node) !void {
-        var parent_node = previous.start("Checking top level statement", 1);
+        var parent_node = previous.start("Top-level statement", 1);
         defer parent_node.end();
         defer self.scope_map.exit();
 
         switch (node.tag) {
             .fn_stmt => {
-                var this_node = parent_node.start("Checking function", node.data.fn_stmt.body.len);
-                defer this_node.end();
+                parent_node.setName("Function");
                 for (node.data.fn_stmt.body) |stmt| {
-                    try self.checkStmt(stmt, self.types.items[node.data.fn_stmt.returns].ty, node, &this_node);
+                    try self.checkStmt(
+                        stmt,
+                        self.types.items[node.data.fn_stmt.returns].ty,
+                        node,
+                        &parent_node,
+                    );
                 }
             },
             .var_stmt => try self.checkStmt(node, .void, null, &parent_node),
-            else => {}, // ?
+            .pub_stmt => {
+                parent_node.setName("Public top-level statement");
+                try self.checkTop(node.data.pub_stmt.stmt, &parent_node);
+            },
+            else => unreachable, // ?
         }
     }
 
@@ -686,7 +694,10 @@ pub const Checker = struct {
     }
 
     fn isTyEql(i_1: Type, i_2: Type) bool {
-        return @backingInt(i_1) == @backingInt(i_2) or (i_1 == .nullt or i_2 == .nullt);
+        const tag = comptime std.meta.Tag(Type);
+        const t1 = @as(tag, i_1);
+        const t2 = @as(tag, i_2);
+        return t1 == t2 or (i_1 == .nullt or i_2 == .nullt);
     }
 
     fn isInt(ty: Type) bool {
