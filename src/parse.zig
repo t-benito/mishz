@@ -42,6 +42,8 @@ pub const Tag = enum {
     assign_mul,
     assign_div,
     call,
+    struct_init,
+    field_init,
     block,
     var_stmt,
     fn_stmt,
@@ -54,7 +56,7 @@ pub const Tag = enum {
     //class_stmt,
     cast,
 };
-
+// No, i do not use DOD.
 pub const Data = union {
     token: usize,
     builtin: struct {
@@ -85,8 +87,8 @@ pub const Data = union {
         callee: *Node,
     },
     struct_init: struct {
-        name: usize,
-        assigns: []*Node,
+        name: ?*Node,
+        fields: []*Node,
     },
     field_init: struct {
         name: usize,
@@ -698,6 +700,53 @@ pub const Parser = struct {
                         .start = old.start,
                         .end = end.end,
                         .file = old.file,
+                    };
+                },
+                .open_body => {
+                    parent_node.setName("Struct initialization");
+
+                    const start = self.advance();
+                    var fields = std.ArrayList(*Node).empty;
+                    while (!self.isAtEnd() and !self.matches(.close_body)) {
+                        parent_node.increaseEstimatedTotalItems(1);
+
+                        const st = try self.expect(.dot, &parent_node);
+                        const name = self.current;
+                        _ = try self.expect(.identifier, &parent_node);
+
+                        _ = try self.expect(.assign, &parent_node);
+                        const v = try self.parseExpr(0, &parent_node);
+                        _ = try self.expect(.semicolon, &parent_node);
+
+                        const n = try self.allocator.create(Node);
+                        n.* = .{
+                            .data = .{
+                                .field_init = .{
+                                    .name = name,
+                                    .val = v,
+                                },
+                            },
+                            .tag = .field_init,
+                            .start = st.start,
+                            .end = v.end,
+                            .file = v.file,
+                        };
+                        try fields.append(self.allocator, n);
+                    }
+                    _ = try self.expect(.close_body, &parent_node);
+
+                    const node = try self.allocator.create(Node);
+                    node.* = .{
+                        .data = .{
+                            .struct_init = .{
+                                .name = lhs,
+                                .fields = try fields.toOwnedSlice(self.allocator),
+                            },
+                        },
+                        .tag = .struct_init,
+                        .start = start.start,
+                        .end = self.peek().end,
+                        .file = start.file,
                     };
                 },
                 .assign,

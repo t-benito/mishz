@@ -160,6 +160,6 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
         &checker_progress,
         args.slow != 0,
     );
-    try checker.run();
+    checker.run() catch std.process.exit(1);
     checker_progress.end();
 }

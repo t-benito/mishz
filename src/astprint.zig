@@ -103,6 +103,16 @@ pub fn printAst(nodes: []const *Node, indent: usize) void {
                 std.debug.print("name_token_index: {}\n", .{node.data.struct_stmt.name});
                 printAst(node.data.struct_stmt.fields, child_indent);
             },
+            .struct_init => {
+                if (node.data.struct_init.name) |n|
+                    printAst((&n)[0..1], child_indent);
+                printAst(node.data.struct_init.fields, child_indent);
+            },
+            .field_init => {
+                printIndent(child_indent);
+                std.debug.print("name_token_index: {}\n", .{node.data.field_init.name});
+                printAst((&node.data.field_init.val)[0..1], child_indent);
+            }
         }
     }
 }

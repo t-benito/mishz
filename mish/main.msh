@@ -21,10 +21,10 @@ struct Player {
 }
 
 i32 Player:new(i32 hp, []u8 class) {
-  ret 1;/*Player{
+  ret Player{
     .hp = hp;
     .class = class;
-    .name = "Adventurer",
-  };*/
+    .name = "Adventurer";
+  };
 }
 
