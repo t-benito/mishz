@@ -88,7 +88,7 @@ pub fn printAst(nodes: []const *Node, indent: usize) void {
                 if (node.data.for_stmt.vari) |v| printAst((&v)[0..1], child_indent);
                 if (node.data.for_stmt.cond) |c| printAst((&c)[0..1], child_indent);
                 if (node.data.for_stmt.incr) |j| printAst((&j)[0..1], child_indent);
-                printAst(node.data.for_stmt.body, child_indent);
+                printAst((&node.data.for_stmt.body)[0..1], child_indent);
             },
             .pub_stmt => {
                 printAst((&node.data.pub_stmt.stmt)[0..1], child_indent);
@@ -98,6 +98,11 @@ pub fn printAst(nodes: []const *Node, indent: usize) void {
             //     std.debug.print("name_token_index: {}\n", .{node.data.class_stmt.name});
             //     printAst(node.data.class_stmt.fields, child_indent);
             // },
+            .struct_stmt => {
+                printIndent(child_indent);
+                std.debug.print("name_token_index: {}\n", .{node.data.struct_stmt.name});
+                printAst(node.data.struct_stmt.fields, child_indent);
+            },
         }
     }
 }

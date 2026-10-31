@@ -8,16 +8,10 @@ pub i32 main {
     SECURE_NUMBER
     SECURE_NUMBER
     SECURE_NUMBER
-}
 
-/*
-struct List {
-  []void data;
-  u64 elmt_size;
 
-  List new() {
-    ret...
-  }
+    i32 this_is_a_variable = 0;
+    i32 mut this_is_a_mutable_variable = 0;
 }
 
 struct Player {
@@ -26,11 +20,11 @@ struct Player {
   []u8 class;
 }
 
-Player Player:new(i32 hp, []u8 class) {
-  ret Player{
+i32 Player:new(i32 hp, []u8 class) {
+  ret 1;/*Player{
     .hp = hp;
     .class = class;
     .name = "Adventurer",
-  };
+  };*/
 }
-*/
+
