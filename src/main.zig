@@ -16,7 +16,6 @@ const CLIArgs = struct {
 };
 
 const BLUE = "\x1b[1;34m";
-const GREEN = "\x1b[1;32m";
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
@@ -178,26 +177,27 @@ fn printZen(io: std.Io, allocator: std.mem.Allocator, stdout: std.Io.File) !void
         \\{s}1{s}{s}.{s} {s}Compilation speed over runtime speed{s}: The compiler should feel like an interpreter.
         \\{s}2{s}{s}.{s} {s}Explicit over implicit{s}: Code should say what it does, and do only what it says.
         \\{s}3{s}{s}.{s} {s}No hidden control flow{s}: No hidden constructors, destructors, or operator overloads.
-        \\{s}4{s}{s}.{s} {s}Simplicity over cleverness{s}: The compiler is purposefully kept simple.
+        \\{s}4{s}{s}.{s} {s}Simplicity over cleverness{s}: todo (the old one was bad)
+        \\
     , .{ // lazyvim, not my fault.
         // title
-        GREEN, RESET,
+        BLUE, RESET,
         // 1
-        BLUE,  RESET,
-        DIM,   RESET,
-        BOLD,  RESET,
+        BLUE, RESET,
+        DIM,  RESET,
+        BOLD, RESET,
         // 2
-        BLUE,  RESET,
-        DIM,   RESET,
-        BOLD,  RESET,
+        BLUE, RESET,
+        DIM,  RESET,
+        BOLD, RESET,
         // 3
-        BLUE,  RESET,
-        DIM,   RESET,
-        BOLD,  RESET,
+        BLUE, RESET,
+        DIM,  RESET,
+        BOLD, RESET,
         // 4
-        BLUE,  RESET,
-        DIM,   RESET,
-        BOLD,  RESET,
+        BLUE, RESET,
+        DIM,  RESET,
+        BOLD, RESET,
     });
     try stdout.writeStreamingAll(io, txt);
     allocator.free(txt);

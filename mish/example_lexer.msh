@@ -1,0 +1,71 @@
+//#include <std/io.msh>
+//#include <std/mem.msh>
+//#include <std/list.msh>
+//#include <std/char.msh>
+
+i32 main {
+
+}
+
+struct Span {
+  u64 start;
+  u64 end;
+}
+
+/*enum Token:Kind {
+  dot;
+  ident;
+}*/
+
+struct Token {
+  Token:Kind kind;
+  Span span;
+}
+
+struct Lexer {
+  u64 current;
+  u64 line;
+  u64 col;
+  []u8 source;
+  std:mem:Alloc alloc;
+}
+
+Lexer Lexer:new([]u8 source, alloc: std:mem:Alloc) {
+  return Lexer{
+    .current = 0;
+    .source = source;
+    .alloc = alloc;
+  };
+}
+
+u8 Lexer:advance(*Lexer self) {
+  if (Lexer:isAtEnd(self))
+    return self->source[self->source.len - 1];
+  u8 c = self->source[self->current];
+  self->current++;
+  self->col++;
+  if (c == "n") {
+    self->line++;
+    self->col = 0;
+  }
+  return c;
+}
+
+u8 Lexer:peek(*Lexer self) {
+  if (Lexer:isAtEnd(self))
+    return self->source[self->source.len - 1];
+  return uself->source[self->current];
+}
+
+bool Lexer:isAtEnd(*Lexer self) {
+  return self->current >= self->source.len;
+}
+
+[]Token Lexer:run(*Lexer self) {
+  List mut tknList = List:initCap(self->alloc, @sizeof(Token), self->source.len / 7);
+  for (;!Lexer:isAtEnd(self);) {
+    u8 char = Lexer:peek(self);
+    if (std:char:isWhitespace(char))
+      continue;
+  }
+}

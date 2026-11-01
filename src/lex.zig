@@ -113,13 +113,12 @@ pub const Token = struct {
         .{ "null", .kw_null },
 
         .{ "mut", .kw_mut },
-        .{ "ret", .kw_ret },
+        .{ "return", .kw_ret },
         .{ "if", .kw_if },
         .{ "else", .kw_else },
         .{ "for", .kw_for },
         .{ "pub", .kw_pub },
         .{ "struct", .kw_struct },
-        //.{ "class", .kw_class },
         .{ "as", .kw_as },
     });
 };
@@ -128,6 +127,7 @@ pub const LexError = error{
     UnknownCharacter,
     UnknownDirective,
     UnclosedStringLiteral,
+    InvalidEscape,
 };
 
 pub const Lexer = struct {
@@ -271,11 +271,9 @@ pub const Lexer = struct {
                 _ = self.advance();
                 var got = false;
 
-                while (!self.isAtEnd()) {
-                    if (self.advance() == '"') {
+                while (!self.isAtEnd() and !got) {
+                    if (self.advance() == '"')
                         got = true;
-                        break;
-                    }
                 }
                 if (!got) {
                     try self.logger.add(allocator, .{
@@ -296,7 +294,7 @@ pub const Lexer = struct {
                 continue;
             }
 
-            if (std.ascii.isAlphabetic(self.peek())) {
+            if (std.ascii.isAlphabetic(self.peek()) or self.peek() == '_') {
                 while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_' or self.peek() == ':') {
                     _ = self.advance();
                 }
@@ -319,7 +317,6 @@ pub const Lexer = struct {
                 continue;
             }
             if (self.peek() == '#') {
-                //dont _ = self.advance(); // skip #
                 while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '#') {
                     _ = self.advance();
                 }

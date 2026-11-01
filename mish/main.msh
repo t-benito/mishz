@@ -14,3 +14,543 @@ pub i32 main {
 pub void thingFunction(i32 i) {
   ret i * 2;
 }
+
+pub i32 main2 {
+  Thing th = Thing{
+    .me = thingFunction;
+  };
+  th.me();
+}
+
+pub void thingF2unction(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main32 {
+  Thing th = Thing{
+    .me = thingFunction;
+  };
+  th.me();
+}
+
+pub void thingFu23nction(i32 i) {
+  ret i * 2;
+}
+
+pub i32 ma3in {
+  Thing th = Thing{
+    .me = thingFunction;
+  };
+  th.me();
+}
+
+pub void thingFun3ction(i32 i) {
+  ret i * 2;
+}
+
+pub i32 ma4in {
+  Thing th = Thing{
+    .me = thingFunction;
+  };
+  th.me();
+}
+
+pub void thingFu4nction(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main5 {
+  Thing th = Thing{
+    .me = thingFunction5;
+  };
+  th.me();
+}
+
+pub void thingFunction5(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main6 {
+  Thing th = Thing{
+    .me = thingFunction6;
+  };
+  th.me();
+}
+
+pub void thingFunction6(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main7 {
+  Thing th = Thing{
+    .me = thingFunction7;
+  };
+  th.me();
+}
+
+pub void thingFunction7(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main8 {
+  Thing th = Thing{
+    .me = thingFunction8;
+  };
+  th.me();
+}
+
+pub void thingFunction8(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main9 {
+  Thing th = Thing{
+    .me = thingFunction9;
+  };
+  th.me();
+}
+
+pub void thingFunction9(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main10 {
+  Thing th = Thing{
+    .me = thingFunction10;
+  };
+  th.me();
+}
+
+pub void thingFunction10(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main11 {
+  Thing th = Thing{
+    .me = thingFunction11;
+  };
+  th.me();
+}
+
+pub void thingFunction11(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main12 {
+  Thing th = Thing{
+    .me = thingFunction12;
+  };
+  th.me();
+}
+
+pub void thingFunction12(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main13 {
+  Thing th = Thing{
+    .me = thingFunction13;
+  };
+  th.me();
+}
+
+pub void thingFunction13(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main14 {
+  Thing th = Thing{
+    .me = thingFunction14;
+  };
+  th.me();
+}
+
+pub void thingFunction14(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main15 {
+  Thing th = Thing{
+    .me = thingFunction15;
+  };
+  th.me();
+}
+
+pub void thingFunction15(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main16 {
+  Thing th = Thing{
+    .me = thingFunction16;
+  };
+  th.me();
+}
+
+pub void thingFunction16(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main17 {
+  Thing th = Thing{
+    .me = thingFunction17;
+  };
+  th.me();
+}
+
+pub void thingFunction17(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main18 {
+  Thing th = Thing{
+    .me = thingFunction18;
+  };
+  th.me();
+}
+
+pub void thingFunction18(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main19 {
+  Thing th = Thing{
+    .me = thingFunction19;
+  };
+  th.me();
+}
+
+pub void thingFunction19(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main20 {
+  Thing th = Thing{
+    .me = thingFunction20;
+  };
+  th.me();
+}
+
+pub void thingFunction20(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main21 {
+  Thing th = Thing{
+    .me = thingFunction21;
+  };
+  th.me();
+}
+
+pub void thingFunction21(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main22 {
+  Thing th = Thing{
+    .me = thingFunction22;
+  };
+  th.me();
+}
+
+pub void thingFunction22(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main23 {
+  Thing th = Thing{
+    .me = thingFunction23;
+  };
+  th.me();
+}
+
+pub void thingFunction23(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main24 {
+  Thing th = Thing{
+    .me = thingFunction24;
+  };
+  th.me();
+}
+
+pub void thingFunction24(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main25 {
+  Thing th = Thing{
+    .me = thingFunction25;
+  };
+  th.me();
+}
+
+pub void thingFunction25(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main26 {
+  Thing th = Thing{
+    .me = thingFunction26;
+  };
+  th.me();
+}
+
+pub void thingFunction26(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main27 {
+  Thing th = Thing{
+    .me = thingFunction27;
+  };
+  th.me();
+}
+
+pub void thingFunction27(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main28 {
+  Thing th = Thing{
+    .me = thingFunction28;
+  };
+  th.me();
+}
+
+pub void thingFunction28(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main29 {
+  Thing th = Thing{
+    .me = thingFunction29;
+  };
+  th.me();
+}
+
+pub void thingFunction29(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main30 {
+  Thing th = Thing{
+    .me = thingFunction30;
+  };
+  th.me();
+}
+
+pub void thingFunction30(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main31 {
+  Thing th = Thing{
+    .me = thingFunction31;
+  };
+  th.me();
+}
+
+pub void thingFunction31(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main33 {
+  Thing th = Thing{
+    .me = thingFunction33;
+  };
+  th.me();
+}
+
+pub void thingFunction33(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main34 {
+  Thing th = Thing{
+    .me = thingFunction34;
+  };
+  th.me();
+}
+
+pub void thingFunction34(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main35 {
+  Thing th = Thing{
+    .me = thingFunction35;
+  };
+  th.me();
+}
+
+pub void thingFunction35(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main36 {
+  Thing th = Thing{
+    .me = thingFunction36;
+  };
+  th.me();
+}
+
+pub void thingFunction36(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main37 {
+  Thing th = Thing{
+    .me = thingFunction37;
+  };
+  th.me();
+}
+
+pub void thingFunction37(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main38 {
+  Thing th = Thing{
+    .me = thingFunction38;
+  };
+  th.me();
+}
+
+pub void thingFunction38(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main39 {
+  Thing th = Thing{
+    .me = thingFunction39;
+  };
+  th.me();
+}
+
+pub void thingFunction39(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main40 {
+  Thing th = Thing{
+    .me = thingFunction40;
+  };
+  th.me();
+}
+
+pub void thingFunction40(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main41 {
+  Thing th = Thing{
+    .me = thingFunction41;
+  };
+  th.me();
+}
+
+pub void thingFunction41(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main42 {
+  Thing th = Thing{
+    .me = thingFunction42;
+  };
+  th.me();
+}
+
+pub void thingFunction42(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main43 {
+  Thing th = Thing{
+    .me = thingFunction43;
+  };
+  th.me();
+}
+
+pub void thingFunction43(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main44 {
+  Thing th = Thing{
+    .me = thingFunction44;
+  };
+  th.me();
+}
+
+pub void thingFunction44(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main45 {
+  Thing th = Thing{
+    .me = thingFunction45;
+  };
+  th.me();
+}
+
+pub void thingFunction45(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main46 {
+  Thing th = Thing{
+    .me = thingFunction46;
+  };
+  th.me();
+}
+
+pub void thingFunction46(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main47 {
+  Thing th = Thing{
+    .me = thingFunction47;
+  };
+  th.me();
+}
+
+pub void thingFunction47(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main48 {
+  Thing th = Thing{
+    .me = thingFunction48;
+  };
+  th.me();
+}
+
+pub void thingFunction48(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main49 {
+  Thing th = Thing{
+    .me = thingFunction49;
+  };
+  th.me();
+}
+
+pub void thingFunction49(i32 i) {
+  ret i * 2;
+}
+
+pub i32 main50 {
+  Thing th = Thing{
+    .me = thingFunction50;
+  };
+  th.me();
+}
+
+pub void thingFunction50(i32 i) {
+  ret i * 2;
+}
+

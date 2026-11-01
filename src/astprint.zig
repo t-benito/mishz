@@ -25,7 +25,9 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try writer.print("type_id: {}\n", .{node.data.cast.ty});
                 try printAst((&node.data.cast.expr)[0..1], child_indent, writer);
             },
-            .property_access => {
+            .pointer_access,
+            .property_access,
+            => {
                 try printIndent(child_indent, writer);
                 try writer.print("name_token_index: {}\n", .{node.data.property_access.name});
                 try printAst((&node.data.property_access.target)[0..1], child_indent, writer);

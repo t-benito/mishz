@@ -1,3 +1,18 @@
-void function {
-  // do stuf
-}
+// test of the preprocessor
+// and also private functions
+
+#define e void
+#define ee myLittlePrivateFunction
+#define eee {
+#define eeee }
+#define eeeee ;
+#define fff (
+#define ffff )
+#define ff std:io:print
+#define s ""
+#define f #define _
+
+e ee eee
+    f eeeee
+    f eeeee
+eeee

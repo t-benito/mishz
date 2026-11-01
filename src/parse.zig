@@ -20,6 +20,7 @@ pub const Tag = enum {
     identifier,
     builtin,
     property_access,
+    pointer_access,
     array_access,
     binary_op_add,
     binary_op_sub,
@@ -481,6 +482,7 @@ pub const Parser = struct {
             .div,
             => return 6,
             .dot,
+            .arrow,
             .open_paren,
             .open_bracket,
             .open_body,
@@ -651,6 +653,27 @@ pub const Parser = struct {
                         return ParseError.ExpectedTypeExpression;
                     }
                 },
+                .arrow => {
+                    parent_node.setName("Pointer access");
+
+                    _ = self.advance();
+                    const target = try self.expect(.identifier, &parent_node);
+
+                    const old = lhs;
+                    lhs = try self.allocator.create(Node);
+                    lhs.* = Node{
+                        .data = .{
+                            .property_access = .{
+                                .target = old,
+                                .name = self.current - 1,
+                            },
+                        },
+                        .tag = .pointer_access,
+                        .start = old.start,
+                        .end = target.end,
+                        .file = old.file,
+                    };
+                },
                 .dot => {
                     parent_node.setName("Property access");
 
@@ -658,7 +681,6 @@ pub const Parser = struct {
                     const target = try self.expect(.identifier, &parent_node);
 
                     const old = lhs;
-
                     lhs = try self.allocator.create(Node);
                     lhs.* = Node{
                         .data = .{
@@ -1137,8 +1159,6 @@ pub const Parser = struct {
             return null;
         }
 
-        const idstart = self.peek();
-
         var mut = false;
         var mut_t: usize = undefined;
         if (self.peek().kind == .kw_mut) {
@@ -1147,6 +1167,7 @@ pub const Parser = struct {
             _ = self.advance();
         }
 
+        const idstart = self.peek();
         if (self.peek().kind == .identifier) {
             switch (self.next().kind) {
                 .open_paren => { // fn with params
@@ -1322,7 +1343,7 @@ pub const Parser = struct {
     }
 
     fn parseRet(self: *Parser, previous: *const std.Progress.Node) !*Node {
-        var ret_node = previous.start("Ret", 1);
+        var ret_node = previous.start("Return", 1);
         defer ret_node.end();
 
         const start = self.current;
