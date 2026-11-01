@@ -1,36 +1,16 @@
-pub i32 main {
-  ret 1; 
+#include "private.msh"
+
+struct Thing {
+  *->void(i32) me;
 }
+
 pub i32 main {
-  ret 1; 
+  Thing th = Thing{
+    .me = thingFunction;
+  };
+  th.me();
 }
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
-}
-pub i32 main {
-  ret 1; 
+
+pub void thingFunction(i32 i) {
+  ret i * 2;
 }

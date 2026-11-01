@@ -79,8 +79,6 @@ pub const Token = struct {
         kw_for,
         kw_pub,
         kw_struct,
-        // kw_class,
-        kw_use,
         kw_as,
 
         identifier,

@@ -142,6 +142,12 @@ pub const Data = union {
 
 pub const TypeID = usize;
 
+pub const Field = struct {
+    name: []const u8,
+    ty: TypeID,
+    mut: bool,
+};
+
 pub const Type = union(enum) {
     void,
     nullt,
@@ -167,7 +173,11 @@ pub const Type = union(enum) {
         len: *Node,
     },
     slice: TypeID,
-    named: struct {
+    strct: struct {
+        name: []const u8,
+        fields: []Field,
+    },
+    named: struct { // TODO remove this
         path: struct { // skip the dots later on
             start: usize,
             end: usize,
@@ -1471,7 +1481,7 @@ pub const Parser = struct {
             _ = try self.expect(.kw_else, &else_node);
 
             if (self.matches(.open_body)) {
-                const estart = self.peek();
+                const estart = self.advance();
 
                 const block = try self.parseBlock(&else_node);
                 else_branch = try self.allocator.create(Node);
@@ -1486,6 +1496,8 @@ pub const Parser = struct {
                     .end = self.peek().end,
                     .file = estart.file,
                 };
+
+                _ = try self.expect(.close_body, &else_node);
             } else {
                 else_branch = try self.parseStmt(&else_node);
             }
@@ -1588,6 +1600,8 @@ pub const Parser = struct {
             if (self.matches(.open_body)) {
                 const sstart = self.current;
                 _ = self.advance();
+
+                body = try self.allocator.create(Node);
                 body.* = .{
                     .data = .{
                         .block = .{
@@ -1824,6 +1838,8 @@ pub const Parser = struct {
         var fields = std.ArrayList(*Node).empty;
         while (!self.isAtEnd() and !self.matches(.close_body)) {
             this_node.increaseEstimatedTotalItems(1);
+
+            if (self.peek().kind == .kw_mut) {}
 
             if (try self.tryParseVar(&this_node)) |n| {
                 if (n.data.var_stmt.val != null) {

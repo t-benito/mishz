@@ -28,6 +28,7 @@ const Symbol = struct {
     pub const Kind = enum {
         vari,
         func,
+        strct,
         param,
     };
     pub const Data = union {
@@ -36,6 +37,9 @@ const Symbol = struct {
             params: []TypeID,
             returns: TypeID,
         },
+        //strct: struct {
+        //    ,
+        //},
         param: TypeID,
     };
 };
@@ -111,6 +115,7 @@ pub const TypeError = error{
     UnexpectedType,
     CannotIndexType,
     NonFunctionCall,
+    NotPublic,
     UndeclaredIdentifier,
     TypeMismatch,
     NotAMember,
@@ -192,8 +197,7 @@ pub const Checker = struct {
 
         switch (node.tag) {
             .fn_stmt => {
-                var this_node = parent_node.start("Function", 0);
-                defer this_node.end();
+                parent_node.setName("Precheck function");
 
                 var param_types: []TypeID = &.{};
                 if (node.data.fn_stmt.params) |params| {
@@ -250,10 +254,14 @@ pub const Checker = struct {
                 }
             },
             .var_stmt => {
-                var this_node = parent_node.start("Variable", 0);
-                defer this_node.end();
+                parent_node.setName("Precheck variable");
+
                 try self.scope_map.define(
-                    self.file_table.spanStr(node.file, self.tokens[node.data.var_stmt.name].start, self.tokens[node.data.var_stmt.name].end),
+                    self.file_table.spanStr(
+                        node.file,
+                        self.tokens[node.data.var_stmt.name].start,
+                        self.tokens[node.data.var_stmt.name].end,
+                    ),
                     Symbol{
                         .kind = .vari,
                         .start = node.start,
@@ -270,6 +278,25 @@ pub const Checker = struct {
                 try self.sleepIfSlow(25);
 
                 try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
+            },
+            .struct_stmt => {
+                parent_node.setName("Precheck struct");
+
+                try self.scope_map.define(
+                    self.file_table.spanStr(
+                        node.file,
+                        self.tokens[node.data.struct_stmt.name].start,
+                        self.tokens[node.data.struct_stmt.name].end,
+                    ),
+                    Symbol{
+                        .kind = .strct,
+                        .start = node.start,
+                        .end = node.end,
+                        .public = public,
+                        .data = 0,
+                    },
+                    &self.logger,
+                );
             },
             else => unreachable,
         }
@@ -347,6 +374,7 @@ pub const Checker = struct {
                 parent_node.setName("Public top-level statement");
                 try self.checkTop(node.data.pub_stmt.stmt, &parent_node);
             },
+            .struct_stmt => {},
             else => unreachable, // ?
         }
     }
@@ -484,8 +512,11 @@ pub const Checker = struct {
                     });
                 }
             },
+            .call => {
+                parent_node.setName("Call");
+                _ = try self.checkExpr(stmt);
+            },
             .for_stmt,
-            .call,
             => _ = try self.checkExpr(stmt),
             else => try self.logger.add(self.allocator, .{
                 .start = stmt.start,
@@ -521,6 +552,26 @@ pub const Checker = struct {
                 const c = &node.data.call;
                 const callee_ident = self.file_table.spanStr(c.callee.file, c.callee.start, c.callee.end);
                 if (self.scope_map.lookup(callee_ident)) |sym| {
+                    if (!sym.public and c.callee.file != sym.file) {
+                        try self.logger.add(self.allocator, .{
+                            .start = c.callee.start,
+                            .end = c.callee.end,
+                            .file = c.callee.file,
+                            .kind = .{ .TypeError = TypeError.NotPublic },
+                            .message = "attempt to call non-public function defined in another the file",
+                            .note = .{
+                                .start = sym.start,
+                                .end = sym.end,
+                                .file = sym.file,
+                                .message = try self.allocator.print(
+                                    "defined here (in file '{s}')",
+                                    .{self.file_table.getPath(sym.file)},
+                                ),
+                            },
+                        });
+                        return TypeError.NotPublic;
+                    }
+
                     if (sym.kind == .func) {
                         for (c.args, 0..) |arg, idx| {
                             const arg_ty = try self.checkExpr(arg);
