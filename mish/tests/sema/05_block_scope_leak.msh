@@ -1,0 +1,9 @@
+// Expected to FAIL: Leaking variables outside of blocks
+pub void test_scope_leak() {
+    {
+        i32 scoped_var = 42;
+    }
+
+    // scoped_var should not be visible here!
+    i32 leaked = scoped_var;
+}

@@ -1,0 +1,8 @@
+// Expected to FAIL: Incompatible types in assignment
+pub void test_assignment_type_mismatch() {
+    i32 number = 100;
+    number = "this is a string";
+
+    bool flag = true;
+    flag = 0;
+}

@@ -120,7 +120,6 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
 
     var preprocessor = try preprocess.Preprocessor.init(
         arena,
-        0,
         tokens,
         &pre_progress,
         &file_table,
@@ -146,7 +145,6 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
         arena,
         io,
         tokens,
-        0,
         &file_table,
         parser_progress,
         args.slow != 0,
@@ -167,7 +165,6 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
         ast,
         tokens,
         parser.types,
-        0,
         &file_table,
         &checker_progress,
         args.slow != 0,

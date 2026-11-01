@@ -378,6 +378,7 @@ pub const Lexer = struct {
                     .note = .{
                         .start = start,
                         .end = self.current,
+                        .file = self.file_id,
                         .message = "mishz does not allow spaces between '#' and preprocessor directive",
                     },
                 });

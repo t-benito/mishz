@@ -25,15 +25,13 @@ pub const PreprocessorError = error{
 
 current: usize = 0,
 
-file_id: u8,
-source: []const u8,
 tokens: []Token,
 macros: std.StringHashMap(Macro),
 
 logger: ErrorLogger,
 allocator: std.mem.Allocator,
 
-out: std.ArrayList(Token) = .empty,
+out: std.ArrayList(Token),
 
 root_node: *const std.Progress.Node,
 slow: bool,
@@ -42,14 +40,13 @@ io: std.Io,
 libc_path: []const u8,
 file_table: *FileTable,
 
-pub fn init(allocator: std.mem.Allocator, file_id: u8, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, slow: bool, io: std.Io) !Preprocessor {
+pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, slow: bool, io: std.Io) !Preprocessor {
     return Preprocessor{
-        .file_id = file_id,
-        .source = file_table.getSource(file_id),
         .tokens = tokens,
         .macros = .initContext(allocator, .{}),
         .logger = .init(file_table),
         .allocator = allocator,
+        .out = try .initCapacity(allocator, tokens.len),
         .root_node = root_node,
         .slow = slow,
         .io = io,
@@ -186,9 +183,9 @@ fn include(self: *Preprocessor) !void {
     const s = self.advance();
     switch (s.kind) {
         .string_literal => {
-            const n = self.file_table.spanStr(self.file_id, s.start, s.end);
+            const n = self.file_table.spanStr(s.file, s.start, s.end);
 
-            const base = self.file_table.getPath(self.file_id);
+            const base = self.file_table.getPath(s.file);
             const dir = std.fs.path.dirname(base) orelse ".";
             const total = try std.fs.path.resolve(self.allocator, &.{
                 dir,
@@ -334,7 +331,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
     var parent_node = self.root_node.start("Including file", 1);
     defer parent_node.end();
     // check for integer overflow
-    if (self.file_id == std.math.maxInt(u8)) {
+    if (filei == std.math.maxInt(u8)) {
         try self.logger.add(self.allocator, .{
             .start = start,
             .end = end,
@@ -357,7 +354,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
     }
     // check for same path
     const cleanp1 = try std.fs.path.resolveAlloc(self.allocator, &.{path});
-    const cleanp2 = try std.fs.path.resolveAlloc(self.allocator, &.{self.file_table.getPath(self.file_id)});
+    const cleanp2 = try std.fs.path.resolveAlloc(self.allocator, &.{self.file_table.getPath(filei)});
     if (std.mem.eql(u8, cleanp1, cleanp2)) {
         try self.logger.add(self.allocator, .{
             .start = start,
@@ -368,6 +365,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
             .note = .{
                 .start = start,
                 .end = end,
+                .file = filei,
                 .message = "a file including itself would result in an infinite loop, crashing the compiler",
             },
         });
@@ -386,6 +384,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
             .note = if (from_libc) .{
                 .start = start,
                 .end = end,
+                .file = filei,
                 .message = "this file is from libc: if it was not found, reinstall the compiler or move it back",
             } else null,
         });
@@ -420,7 +419,6 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
 
     var sub = try Preprocessor.init(
         self.allocator,
-        id,
         tokens,
         &pre_progress,
         self.file_table,
@@ -474,6 +472,7 @@ fn expand(self: *Preprocessor, tkn: Token, new: *std.ArrayList(Token)) !bool {
                 .note = .{
                     .start = tkn.start,
                     .end = tkn.end,
+                    .file = tkn.file,
                     .message = "used here",
                 },
             });

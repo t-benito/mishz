@@ -66,12 +66,29 @@ const ScopeMap = struct {
 
     /// defines a symbol in current scope,
     /// enters new scope if no scope has yet been entered
-    pub fn define(self: *ScopeMap, name: []const u8, symbol: Symbol) !void {
+    pub fn define(self: *ScopeMap, name: []const u8, symbol: Symbol, logger: *err.ErrorLogger) !void {
         if (self.maps.last() == null) {
             try self.enter();
         }
 
-        var l = self.maps.last().?;
+        if (self.lookup(name)) |old| {
+            try logger.add(self.allocator, .{
+                .start = symbol.start,
+                .end = symbol.end,
+                .file = symbol.file,
+                .kind = .{ .TypeError = TypeError.NameAlreadyDefined },
+                .message = "symbol already defined",
+                .note = .{
+                    .start = old.start,
+                    .end = old.end,
+                    .file = old.file,
+                    .message = "first defined here",
+                },
+            });
+            return;
+        }
+
+        var l = self.maps.lastPtr().?;
         try l.put(name, symbol);
     }
 
@@ -92,7 +109,14 @@ pub const TypeError = error{
     IncompatibleTypes,
     UnknownType,
     UnexpectedType,
+    CannotIndexType,
+    NonFunctionCall,
+    UndeclaredIdentifier,
     TypeMismatch,
+    NotAMember,
+    IndexByNonInt,
+    NameAlreadyDefined,
+    ExpectedStatement,
     MismatchedVariableType,
 };
 
@@ -102,8 +126,6 @@ pub const Checker = struct {
     ast: []*Node,
     types: std.ArrayList(TypeNode),
     tokens: []Token,
-    source: []const u8,
-    file_id: u8,
     file_table: *FileTable,
 
     allocator: std.mem.Allocator,
@@ -120,7 +142,6 @@ pub const Checker = struct {
         ast: []*Node,
         tokens: []Token,
         types: std.ArrayList(TypeNode),
-        file_id: u8,
         file_table: *FileTable,
         root_node: *const std.Progress.Node,
         slow: bool,
@@ -130,8 +151,6 @@ pub const Checker = struct {
             .ast = ast,
             .types = types,
             .tokens = tokens,
-            .source = file_table.getSource(file_id),
-            .file_id = file_id,
             .file_table = file_table,
 
             .allocator = allocator,
@@ -151,13 +170,15 @@ pub const Checker = struct {
     pub fn run(self: *Checker) !void {
         try self.buildCache(); // IMPORTANT
 
+        try self.scope_map.enter();
         for (self.ast) |node| {
             try self.sleepIfSlow(80);
-            try self.precheckTop(node, self.root_node, false);
+            self.precheckTop(node, self.root_node, false) catch {};
         }
 
+        try self.scope_map.enter();
         for (self.ast) |node| {
-            try self.sleepIfSlow(100);
+            try self.sleepIfSlow(140);
             self.checkTop(node, self.root_node) catch {};
         }
         if (self.logger.dump(self.allocator)) {
@@ -169,7 +190,6 @@ pub const Checker = struct {
         var parent_node = previous.start("Precheck top-level statement", 1);
         defer parent_node.end();
 
-        try self.scope_map.enter();
         switch (node.tag) {
             .fn_stmt => {
                 var this_node = parent_node.start("Function", 0);
@@ -203,6 +223,7 @@ pub const Checker = struct {
                             },
                         },
                     },
+                    &self.logger,
                 );
 
                 if (node.data.fn_stmt.params) |params| {
@@ -223,6 +244,7 @@ pub const Checker = struct {
                                     .param = param.data.param.ty,
                                 },
                             },
+                            &self.logger,
                         );
                     }
                 }
@@ -240,6 +262,7 @@ pub const Checker = struct {
                         .public = public,
                         .data = .{ .vari = node.data.var_stmt.ty },
                     },
+                    &self.logger,
                 );
             },
             .pub_stmt => {
@@ -306,7 +329,6 @@ pub const Checker = struct {
     fn checkTop(self: *Checker, node: *Node, previous: *const std.Progress.Node) !void {
         var parent_node = previous.start("Top-level statement", 1);
         defer parent_node.end();
-        defer self.scope_map.exit();
 
         switch (node.tag) {
             .fn_stmt => {
@@ -330,10 +352,12 @@ pub const Checker = struct {
     }
 
     fn checkStmt(self: *Checker, stmt: *Node, ret_ty: Type, fn_start: ?*Node, previous: *const std.Progress.Node) !void {
-        var parent_node = previous.start("Checking statement", 1);
+        var parent_node = previous.start("Statement", 0);
         defer parent_node.end();
         switch (stmt.tag) {
             .var_stmt => {
+                parent_node.setName("Variable");
+
                 const v = &stmt.data.var_stmt;
                 try self.scope_map.define(
                     self.file_table.spanStr(stmt.file, self.tokens[v.name].start, self.tokens[v.name].end),
@@ -344,6 +368,7 @@ pub const Checker = struct {
                         .kind = .vari,
                         .data = .{ .vari = v.ty },
                     },
+                    &self.logger,
                 );
 
                 if (v.val) |val| {
@@ -365,6 +390,8 @@ pub const Checker = struct {
                 }
             },
             .ret_stmt => {
+                parent_node.setName("Ret");
+
                 const v = &stmt.data.ret_stmt;
                 if (v.val) |val| {
                     const returned = try self.checkExpr(val);
@@ -382,6 +409,7 @@ pub const Checker = struct {
                             .note = if (fn_start) |fn_stmt| Note{
                                 .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
                                 .end = self.types.items[fn_stmt.data.fn_stmt.returns].end,
+                                .file = val.file, // a tad of cheating
                                 .message = "return type declared here",
                             } else null,
                         });
@@ -396,12 +424,15 @@ pub const Checker = struct {
                         .note = if (fn_start) |fn_stmt| Note{
                             .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
                             .end = self.types.items[fn_stmt.data.fn_stmt.returns].end,
+                            .file = stmt.file, // a tad of cheating
                             .message = "return type declared here",
                         } else null,
                     });
                 }
             },
             .if_stmt => {
+                parent_node.setName("If");
+
                 const cond_ty = try self.checkExpr(stmt.data.if_stmt.cond);
                 if (cond_ty != .bool) {
                     try self.logger.add(self.allocator, Error{
@@ -412,18 +443,29 @@ pub const Checker = struct {
                         .message = "condition of an if statement must be a bool",
                     });
                 }
+                var block = false;
+                if (stmt.data.if_stmt.body.tag != .block) {
+                    try self.scope_map.enter();
+                    block = true;
+                }
+                defer if (block)
+                    self.scope_map.exit();
+
+                try self.checkStmt(stmt.data.if_stmt.body, ret_ty, fn_start, &parent_node);
             },
             .block => {
-                var this_node = parent_node.start("Checking block", stmt.data.block.body.len);
-                defer this_node.end();
+                parent_node.setName("Block");
 
                 try self.scope_map.enter();
                 defer self.scope_map.exit();
                 for (stmt.data.block.body) |stmt_i| {
-                    try self.checkStmt(stmt_i, ret_ty, fn_start, &this_node);
+                    parent_node.increaseEstimatedTotalItems(1);
+                    try self.checkStmt(stmt_i, ret_ty, fn_start, &parent_node);
                 }
             },
             .assign => {
+                parent_node.setName("Assignment");
+
                 const assi = &stmt.data.assignment;
 
                 const lhs_ty = try self.checkExpr(assi.target);
@@ -442,7 +484,16 @@ pub const Checker = struct {
                     });
                 }
             },
-            else => _ = try self.checkExpr(stmt),
+            .for_stmt,
+            .call,
+            => _ = try self.checkExpr(stmt),
+            else => try self.logger.add(self.allocator, .{
+                .start = stmt.start,
+                .end = stmt.end,
+                .file = stmt.file,
+                .kind = .{ .TypeError = TypeError.ExpectedStatement },
+                .message = "expected a statement",
+            }),
         }
     }
 
@@ -461,8 +512,8 @@ pub const Checker = struct {
                     .start = node.start,
                     .end = node.end,
                     .file = node.file,
-                    .kind = .{ .TypeError = TypeError.UnknownType },
-                    .message = try std.fmt.allocPrint(self.allocator, "use of undeclared identifier '{s}'", .{ident_str}),
+                    .kind = .{ .TypeError = TypeError.UndeclaredIdentifier },
+                    .message = try self.allocator.print("use of undeclared identifier '{s}'", .{ident_str}),
                 });
                 return TypeError.UnknownType;
             },
@@ -487,6 +538,7 @@ pub const Checker = struct {
                                             .{ @tagName(expected_ty), @tagName(arg_ty) },
                                         ),
                                     });
+                                    return TypeError.TypeMismatch;
                                 } // this nesting sucks
                             }
                         }
@@ -501,7 +553,7 @@ pub const Checker = struct {
                     .start = c.callee.start,
                     .end = c.callee.end,
                     .file = c.callee.file,
-                    .kind = .{ .TypeError = TypeError.UnexpectedType },
+                    .kind = .{ .TypeError = TypeError.NonFunctionCall },
                     .message = try std.fmt.allocPrint(self.allocator, "cannot call non-function '{s}'", .{callee_ident}),
                 });
                 return TypeError.UnexpectedType;
@@ -536,7 +588,7 @@ pub const Checker = struct {
                     .start = node.start,
                     .end = node.end,
                     .file = node.file,
-                    .kind = .{ .TypeError = TypeError.UnexpectedType },
+                    .kind = .{ .TypeError = TypeError.NotAMember },
                     .message = try std.fmt.allocPrint(self.allocator, "type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
                 });
                 return TypeError.UnexpectedType;
@@ -551,9 +603,10 @@ pub const Checker = struct {
                         .start = aa.value.start,
                         .end = aa.value.end,
                         .file = aa.value.file,
-                        .kind = .{ .TypeError = TypeError.UnexpectedType },
+                        .kind = .{ .TypeError = TypeError.IndexByNonInt },
                         .message = "array index must be an integer",
                     });
+                    return TypeError.IndexByNonInt;
                 }
 
                 switch (target_ty) {
@@ -564,7 +617,7 @@ pub const Checker = struct {
                             .start = aa.target.start,
                             .end = aa.target.end,
                             .file = aa.target.file,
-                            .kind = .{ .TypeError = TypeError.UnexpectedType },
+                            .kind = .{ .TypeError = TypeError.CannotIndexType },
                             .message = try std.fmt.allocPrint(self.allocator, "cannot index non-indexable type '{s}'", .{@tagName(target_ty)}),
                         });
                         return TypeError.UnexpectedType;
@@ -646,6 +699,7 @@ pub const Checker = struct {
                         .note = .{
                             .start = node.start,
                             .end = node.start + 1,
+                            .file = node.file,
                             .message = "unary operator NOT only accepts bools",
                         },
                     });
@@ -664,10 +718,15 @@ pub const Checker = struct {
                         .end = node.end,
                         .file = node.file,
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
-                        .message = try std.fmt.allocPrint(self.allocator, "unexpected type {s}", .{@tagName(rhs)}),
+                        .message = try self.allocator.print("unexpected type {s}", .{@tagName(rhs)}),
                         .note = Note{
                             .start = node.start,
-                            .end = node.start + if (node.tag == .unary_op_decr or node.tag == .unary_op_incr) @as(usize, 2) else @as(usize, 1),
+                            .end = node.start +
+                                if (node.tag == .unary_op_decr or node.tag == .unary_op_incr)
+                                    @as(usize, 2)
+                                else
+                                    @as(usize, 1),
+                            .file = node.file,
                             .message = "this unary operator only accepts floats, unsigned integers or integers",
                         },
                     });

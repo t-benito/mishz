@@ -206,9 +206,7 @@ pub const ParseError = error{
 };
 
 pub const Parser = struct {
-    file_id: u8,
     file_table: *FileTable,
-    source: []const u8,
     tokens: []Token,
     current: usize = 0,
 
@@ -222,16 +220,14 @@ pub const Parser = struct {
 
     slow: bool,
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, tokens: []Token, file_id: u8, file_table: *FileTable, progress: std.Progress.Node, slow: bool) Parser {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, tokens: []Token, file_table: *FileTable, progress: std.Progress.Node, slow: bool) Parser {
         return Parser{
-            .file_id = file_id,
             .file_table = file_table,
-            .source = file_table.getSource(file_id),
             .tokens = tokens,
             .allocator = allocator,
             .io = io,
             .logger = .init(file_table),
-            .types = std.ArrayList(TypeNode).empty,
+            .types = std.ArrayList(TypeNode).initCapacity(allocator, tokens.len / 50) catch std.ArrayList(TypeNode).empty,
             .root_node = progress,
             .slow = slow,
         };
@@ -260,7 +256,14 @@ pub const Parser = struct {
         if (t.kind == kind) {
             return t;
         }
-        const fmt = try std.fmt.allocPrint(self.allocator, "expected '{s}', found '{s}' ({s})", .{ describeKind(kind), self.tokenText(t), @tagName(t.kind) });
+        const fmt = try self.allocator.print(
+            "expected '{s}', found '{s}' ({s})",
+            .{
+                describeKind(kind),
+                self.file_table.spanStr(t.file, t.start, t.end),
+                @tagName(t.kind),
+            },
+        );
         self.current -= 1;
         try self.logger.add(self.allocator, Error{
             .message = fmt,
@@ -274,12 +277,6 @@ pub const Parser = struct {
         node.setName(newname);
 
         return ParseError.UnexpectedToken;
-    }
-
-    fn tokenText(self: *Parser, tok: Token) []const u8 {
-        const end = @min(tok.end, self.source.len);
-        const start = @min(tok.start, end);
-        return self.source[start..end];
     }
 
     fn describeKind(kind: Token.Kind) []const u8 {
@@ -382,7 +379,7 @@ pub const Parser = struct {
         var parent_node = previous.start("Body", 0);
         defer parent_node.end();
 
-        var body = std.ArrayList(*Node).empty;
+        var body = try std.ArrayList(*Node).initCapacity(self.allocator, 8);
         while (!self.isAtEnd()) {
             if (self.peek().kind == .close_body) {
                 break;
@@ -414,7 +411,13 @@ pub const Parser = struct {
             .start = found_top.start,
             .end = self.next().end,
             .file = found_top.file,
-            .message = try std.fmt.allocPrint(self.allocator, "expected a top-level statement (function, class or global variable), found '{s}' ({s})", .{ self.tokenText(found_top), @tagName(found_top.kind) }),
+            .message = try self.allocator.print(
+                "expected a top-level statement (function, class or global variable), found '{s}' ({s})",
+                .{
+                    self.file_table.spanStr(found_top.file, found_top.start, found_top.end),
+                    @tagName(found_top.kind),
+                },
+            ),
         });
         return ParseError.ExpectedTopLevelStatement;
     }
@@ -614,7 +617,13 @@ pub const Parser = struct {
                     .start = lhs_t.start,
                     .end = lhs_t.end,
                     .file = lhs_t.file,
-                    .message = try std.fmt.allocPrint(self.allocator, "expected an expression, found '{s}' ({s})", .{ self.tokenText(lhs_t), @tagName(lhs_t.kind) }),
+                    .message = try self.allocator.print(
+                        "expected an expression, found '{s}' ({s})",
+                        .{
+                            self.file_table.spanStr(lhs_t.file, lhs_t.start, lhs_t.end),
+                            @tagName(lhs_t.kind),
+                        },
+                    ),
                 });
                 return ParseError.ExpectedExpression;
             },
@@ -1237,7 +1246,7 @@ pub const Parser = struct {
                     _ = try self.expect(.identifier, &parent_node);
                     _ = try self.expect(.open_paren, &parent_node);
 
-                    var params = std.ArrayList(*Node).empty;
+                    var params = try std.ArrayList(*Node).initCapacity(self.allocator, 3);
 
                     var params_node = parent_node.start("Parsing parameters", 0);
                     errdefer params_node.end();
@@ -1275,11 +1284,18 @@ pub const Parser = struct {
                                 .start = found_ty.start,
                                 .end = self.next().end, // cant get any better error highlighting...
                                 .file = found_ty.file,
-                                .message = try std.fmt.allocPrint(self.allocator, "expected type of parameter, found '{s}' ({s})", .{ self.tokenText(found_ty), @tagName(found_ty.kind) }),
+                                .message = try self.allocator.print(
+                                    "expected type of parameter, found '{s}' ({s})",
+                                    .{
+                                        self.file_table.spanStr(found_ty.file, found_ty.start, found_ty.end),
+                                        @tagName(found_ty.kind),
+                                    },
+                                ),
                                 .note = .{
                                     .message = "function declared here",
                                     .start = idstart.start,
                                     .end = idstart.end,
+                                    .file = idstart.file,
                                 },
                             });
                             self.current = start;
@@ -1619,7 +1635,13 @@ pub const Parser = struct {
                 .start = errstart1,
                 .end = self.next().end,
                 .file = self.peek().file,
-                .message = try std.fmt.allocPrint(self.allocator, "expected a variable declaration or ';' to start the 'for' header, found '{s}' ({s})", .{ self.tokenText(found_var), @tagName(found_var.kind) }),
+                .message = try self.allocator.print(
+                    "expected a variable declaration or ';' to start the 'for' header, found '{s}' ({s})",
+                    .{
+                        self.file_table.spanStr(found_var.file, found_var.start, found_var.end),
+                        @tagName(found_var.kind),
+                    },
+                ),
             });
             return ParseError.ExpectedVariableStmt;
         }
@@ -1903,7 +1925,13 @@ pub const Parser = struct {
             .start = found_pub.start,
             .end = found_pub.end,
             .file = found_pub.file,
-            .message = try std.fmt.allocPrint(self.allocator, "expected a variable, function or 'struct' after 'pub', found '{s}' ({s})", .{ self.tokenText(found_pub), @tagName(found_pub.kind) }),
+            .message = try self.allocator.print(
+                "expected a variable, function or 'struct' after 'pub', found '{s}' ({s})",
+                .{
+                    self.file_table.spanStr(found_pub.file, found_pub.start, found_pub.end),
+                    @tagName(found_pub.kind),
+                },
+            ),
         });
         return ParseError.ExpectedStatement;
     }

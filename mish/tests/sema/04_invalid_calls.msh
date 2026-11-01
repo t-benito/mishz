@@ -1,0 +1,16 @@
+// Expected to FAIL: Calling with wrong parameter types or arity
+pub void takes_two(i32 a, bool b) {
+    ret;
+}
+
+pub void test_invalid_call() {
+    // Calling with mismatched types
+    takes_two("first", 123);
+
+    // Calling a variable as a function
+    i32 not_a_func = 5;
+    not_a_func(1);
+
+    // Calling undeclared identifier
+    does_not_exist();
+}
