@@ -215,16 +215,24 @@ pub const Parser = struct {
     allocator: std.mem.Allocator,
 
     logger: ErrorLogger,
-    root_node: std.Progress.Node,
+    writer: *std.Io.Writer,
+    root_node: *const std.Progress.Node,
 
     types: std.ArrayList(TypeNode),
 
-    pub fn init(allocator: std.mem.Allocator, tokens: []Token, file_table: *FileTable, progress: std.Progress.Node) Parser {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        writer: *std.Io.Writer,
+        tokens: []Token,
+        file_table: *FileTable,
+        progress: *const std.Progress.Node,
+    ) Parser {
         return Parser{
             .file_table = file_table,
             .tokens = tokens,
             .allocator = allocator,
             .logger = .init(file_table),
+            .writer = writer,
             .types = std.ArrayList(TypeNode).initCapacity(allocator, tokens.len / 50) catch std.ArrayList(TypeNode).empty,
             .root_node = progress,
         };
@@ -365,7 +373,7 @@ pub const Parser = struct {
             try nodes.append(self.allocator, top);
             self.root_node.setEstimatedTotalItems(@max(self.tokens.len / 25, nodes.items.len));
         }
-        if (self.logger.dump(self.allocator)) {
+        if (try self.logger.dump(self.allocator, self.writer)) {
             return error.parse;
         }
         const array = try nodes.toOwnedSlice(self.allocator);

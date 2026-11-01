@@ -179,7 +179,7 @@ pub const Lexer = struct {
         return self.current >= self.source.len;
     }
 
-    pub fn run(self: *Lexer, allocator: std.mem.Allocator, progress: std.Progress.Node) ![]Token {
+    pub fn run(self: *Lexer, allocator: std.mem.Allocator, writer: *std.Io.Writer, progress: std.Progress.Node) ![]Token {
         var inits = progress.start("Initializing", 0);
         var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 7);
 
@@ -393,7 +393,7 @@ pub const Lexer = struct {
 
         var dump = progress.start("Dumping", 0);
         progress.increaseEstimatedTotalItems(2);
-        if (self.logger.dump(allocator)) {
+        if (try self.logger.dump(allocator, writer)) {
             return error.lexer;
         }
 

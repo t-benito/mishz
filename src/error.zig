@@ -70,18 +70,18 @@ pub const ErrorLogger = struct {
         return allocator.print("E{d}", .{hashEStr(errname)}) catch "E-1";
     }
 
-    pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator) bool {
+    pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator, writer: *std.Io.Writer) !bool {
         defer self.errors.deinit(allocator);
         if (self.errors.items.len == 0) return false;
 
         for (self.errors.items, 0..) |err, idx| {
             const source = self.file_table.getSource(err.file);
             const path = self.file_table.getPath(err.file);
-
-            if (idx > 0) std.debug.print("\n", .{});
+            if (idx > 0)
+                try writer.print("\n", .{});
 
             render(
-                allocator,
+                writer,
                 source,
                 path,
                 kindName(allocator, err.kind),
@@ -90,13 +90,13 @@ pub const ErrorLogger = struct {
                 err.end,
                 false,
             ) catch {
-                std.debug.print("{s}error{s}: {s} (could not render snippet)\n", .{ RED, RESET, err.message });
+                try writer.print("{s}error{s}: {s} (could not render snippet)\n", .{ RED, RESET, err.message });
             };
             if (err.note) |n| {
                 const nsource = self.file_table.getSource(n.file);
                 const npath = self.file_table.getPath(n.file);
                 render(
-                    allocator,
+                    writer,
                     nsource,
                     npath,
                     "note",
@@ -107,11 +107,13 @@ pub const ErrorLogger = struct {
                 ) catch {};
             }
         }
+        try writer.writeAll("\n");
+        try writer.flush();
         return true;
     }
 
     fn render(
-        allocator: std.mem.Allocator,
+        writer: *std.Io.Writer,
         source: []const u8,
         path: []const u8,
         label: []const u8,
@@ -137,11 +139,11 @@ pub const ErrorLogger = struct {
         const col = s - line_start + 1;
 
         if (is_note) {
-            std.debug.print("\n{s}note{s}: {s}\n", .{ BLUE, RESET, message });
+            try writer.print("\n{s}note{s}: {s}\n", .{ BLUE, RESET, message });
         } else {
-            std.debug.print("{s}{s}{s}:\n{s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, path, RESET, RED, RESET, DIM, label, RESET, message });
+            try writer.print("{s}{s}{s}:\n{s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, path, RESET, RED, RESET, DIM, label, RESET, message });
         }
-        std.debug.print(" {s}-->{s} {d}:{d}\n\n", .{ CYAN, RESET, line, col });
+        try writer.print(" {s}-->{s} {d}:{d}\n\n", .{ CYAN, RESET, line, col });
 
         var tmp = line;
         var digits: usize = 1;
@@ -150,31 +152,31 @@ pub const ErrorLogger = struct {
         }
 
         const slice = source[line_start..line_end];
-        std.debug.print(" {d} {s}|{s} {s}\n", .{ line, CYAN, RESET, slice });
+        try writer.print(" {d} {s}|{s} {s}\n", .{ line, CYAN, RESET, slice });
 
-        std.debug.print(" ", .{});
+        try writer.writeAll(" ");
         for (0..digits) |_| {
-            std.debug.print(" ", .{});
+            try writer.writeAll(" ");
         }
-        std.debug.print(" {s}|{s} ", .{ CYAN, RESET });
+        try writer.print(" {s}|{s} ", .{ CYAN, RESET });
 
         const width = line_end - line_start;
-        std.debug.print("{s}", .{if (is_note) BLUE else "\x1b[31m"});
+        try writer.print("{s}", .{if (is_note) BLUE else "\x1b[31m"});
         if (width == 0) {
-            std.debug.print("^", .{});
+            try writer.writeAll("^");
         } else {
-            const marks = try allocator.alloc(u8, width);
-            @memset(marks, ' ');
-
             var a = s - line_start;
-            if (a >= width) a = width - 1;
+            if (a >= width)
+                a = width - 1;
 
             var b = e - line_start;
-            if (b > width) b = width;
-            if (b <= a) b = a + 1;
-
-            @memset(marks[a..b], '^');
-            std.debug.print("{s}", .{marks});
+            if (b > width)
+                b = width;
+            if (b <= a)
+                b = a + 1;
+            for (0..a) |_| {
+                try writer.writeByte('^');
+            }
         }
         std.debug.print("{s}\n", .{RESET});
     }

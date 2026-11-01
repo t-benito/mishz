@@ -97,6 +97,11 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     var root_progress = std.Progress.start(io, .{ .root_name = progress_name });
     defer root_progress.end();
 
+    //////////////////////////////////// get stdout
+    var buffer: [65535]u8 = undefined;
+    var sstdout = std.Io.File.stdout().writer(io, &buffer);
+    var stdout = &sstdout.interface;
+
     //////////////////////////////////// file table
     const cwd = try std.process.currentPathAlloc(io, arena);
     const total = try std.fs.path.join(arena, &.{
@@ -108,7 +113,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     /////////////////////////////////// lexer
     var lexer = lex.Lexer.init(0, &file_table);
     var lexer_progress = root_progress.start("Lexer", source.len / 12 + 3);
-    var tokens = lexer.run(arena, lexer_progress) catch std.process.exit(1);
+    var tokens = lexer.run(arena, stdout, lexer_progress) catch std.process.exit(1);
     lexer_progress.end();
 
     //////////////////////////////////// preprocessor
@@ -120,6 +125,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
         &pre_progress,
         &file_table,
         io,
+        stdout,
     );
     preprocessor.run() catch std.process.exit(1);
     tokens = preprocessor.tokens;
@@ -127,11 +133,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     pre_progress.end();
 
     if (args.tokens != 0) {
-        var buffer: [65535]u8 = undefined;
-        var stdout = std.Io.File.stdout().writer(io, &buffer);
-        const writer = &stdout.interface;
-
-        try tknprint.print(tokens, &file_table, writer);
+        try tknprint.print(tokens, &file_table, stdout);
         return;
     }
 
@@ -139,20 +141,17 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     var parser_progress = root_progress.start("Parser", tokens.len / 25);
     var parser = parse.Parser.init(
         arena,
+        stdout,
         tokens,
         &file_table,
-        parser_progress,
+        &parser_progress,
     );
     const ast = parser.run() catch std.process.exit(1);
     parser_progress.end();
 
     if (args.ast != 0) {
-        var buffer: [65535]u8 = undefined;
-        var stdout = std.Io.File.stdout().writer(io, &buffer);
-        const writer = &stdout.interface;
-
-        try astprint.printAst(ast, 0, writer);
-        try writer.flush();
+        try astprint.printAst(ast, 0, stdout);
+        try stdout.flush();
         return;
     }
 

@@ -29,6 +29,7 @@ tokens: []Token,
 macros: std.StringHashMap(Macro),
 
 logger: ErrorLogger,
+writer: *std.Io.Writer,
 allocator: std.mem.Allocator,
 
 out: std.ArrayList(Token),
@@ -39,7 +40,14 @@ io: std.Io,
 libc_path: []const u8,
 file_table: *FileTable,
 
-pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, io: std.Io) !Preprocessor {
+pub fn init(
+    allocator: std.mem.Allocator,
+    tokens: []Token,
+    root_node: *const std.Progress.Node,
+    file_table: *FileTable,
+    io: std.Io,
+    writer: *std.Io.Writer,
+) !Preprocessor {
     return Preprocessor{
         .tokens = tokens,
         .macros = .initContext(allocator, .{}),
@@ -48,6 +56,7 @@ pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std
         .out = try .initCapacity(allocator, tokens.len),
         .root_node = root_node,
         .io = io,
+        .writer = writer,
         .libc_path = try std.fs.path.join(allocator, &.{
             try std.process.executableDirPathAlloc(io, allocator),
             "libc",
@@ -102,7 +111,7 @@ pub fn run(self: *Preprocessor) !void {
     _ = try self.replace();
     try self.cleanup();
 
-    if (self.logger.dump(self.allocator))
+    if (try self.logger.dump(self.allocator, self.writer))
         return error.pre;
 }
 
@@ -359,7 +368,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
         });
         return PreprocessorError.IncludeError;
     }
-
+    // open file
     const file = std.Io.Dir.openFileAbsolute(self.io, path, .{
         .mode = .read_only,
     }) catch |e| {
@@ -399,7 +408,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
     var lex_progress = parent_node.start("Lexer", source.len / 27);
 
     var lexer = lex.Lexer.init(id, self.file_table);
-    const tokens = try lexer.run(self.allocator, lex_progress);
+    const tokens = try lexer.run(self.allocator, self.writer, lex_progress);
 
     lex_progress.end();
     // preprocessor
@@ -411,6 +420,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
         &pre_progress,
         self.file_table,
         self.io,
+        self.writer,
     );
     sub.macros = self.macros;
     try sub.run();
