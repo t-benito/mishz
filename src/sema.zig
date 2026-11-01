@@ -134,22 +134,18 @@ pub const Checker = struct {
     file_table: *FileTable,
 
     allocator: std.mem.Allocator,
-    io: std.Io,
     root_node: *const std.Progress.Node,
     logger: err.ErrorLogger,
 
-    slow: bool,
     string_ty_id: TypeID,
 
     pub fn init(
         allocator: std.mem.Allocator,
-        io: std.Io,
         ast: []*Node,
         tokens: []Token,
         types: std.ArrayList(TypeNode),
         file_table: *FileTable,
         root_node: *const std.Progress.Node,
-        slow: bool,
     ) Checker {
         return .{
             .scope_map = .init(allocator),
@@ -159,17 +155,11 @@ pub const Checker = struct {
             .file_table = file_table,
 
             .allocator = allocator,
-            .io = io,
             .root_node = root_node,
             .logger = .init(file_table),
 
-            .slow = slow,
             .string_ty_id = 0,
         };
-    }
-
-    fn sleepIfSlow(self: *Checker, milliseconds: u16) !void {
-        if (self.slow) try std.Io.sleep(self.io, std.Io.Duration.fromMilliseconds(milliseconds), .awake);
     }
 
     pub fn run(self: *Checker) !void {
@@ -177,13 +167,11 @@ pub const Checker = struct {
 
         try self.scope_map.enter();
         for (self.ast) |node| {
-            try self.sleepIfSlow(80);
             self.precheckTop(node, self.root_node, false) catch {};
         }
 
         try self.scope_map.enter();
         for (self.ast) |node| {
-            try self.sleepIfSlow(140);
             self.checkTop(node, self.root_node) catch {};
         }
         if (self.logger.dump(self.allocator)) {
@@ -275,7 +263,6 @@ pub const Checker = struct {
             },
             .pub_stmt => {
                 parent_node.setName("Precheck pub top-level statement");
-                try self.sleepIfSlow(25);
 
                 try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
             },
@@ -315,7 +302,6 @@ pub const Checker = struct {
                 else => {},
             }
         }
-        try self.sleepIfSlow(30);
         if (u8_type_id) |u8_id| {
             for (self.types.items, 0..) |t, idx| {
                 switch (t.ty) {

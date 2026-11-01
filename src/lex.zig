@@ -130,8 +130,6 @@ pub const LexError = error{
     UnclosedStringLiteral,
 };
 
-const lexer_slow_sleep_time = std.Io.Duration.fromMilliseconds(25);
-
 pub const Lexer = struct {
     file_id: u8,
     file_table: *FileTable,
@@ -181,7 +179,7 @@ pub const Lexer = struct {
         return self.current >= self.source.len;
     }
 
-    pub fn run(self: *Lexer, allocator: std.mem.Allocator, progress: std.Progress.Node, slow: bool, io: ?std.Io) ![]Token {
+    pub fn run(self: *Lexer, allocator: std.mem.Allocator, progress: std.Progress.Node) ![]Token {
         var inits = progress.start("Initializing", 0);
         var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 7);
 
@@ -190,10 +188,6 @@ pub const Lexer = struct {
         inits.end();
         var runs: usize = 0;
         while (!self.isAtEnd()) {
-            if (slow) {
-                try std.Io.sleep(io.?, lexer_slow_sleep_time, .awake);
-            }
-
             runs += 1;
             //const msg = try std.fmt.allocPrint(allocator, "Running (run {})", .{runs});
             //defer allocator.free(msg);
@@ -404,9 +398,6 @@ pub const Lexer = struct {
         progress.increaseEstimatedTotalItems(2);
         if (self.logger.dump(allocator)) {
             return error.lexer;
-        }
-        if (slow) {
-            try std.Io.sleep(io.?, lexer_slow_sleep_time, .awake);
         }
 
         var finish = run_progress.start("Lexer finished!", 0);

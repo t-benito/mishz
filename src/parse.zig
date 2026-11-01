@@ -221,25 +221,20 @@ pub const Parser = struct {
     current: usize = 0,
 
     allocator: std.mem.Allocator,
-    io: std.Io,
 
     logger: ErrorLogger,
     root_node: std.Progress.Node,
 
     types: std.ArrayList(TypeNode),
 
-    slow: bool,
-
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, tokens: []Token, file_table: *FileTable, progress: std.Progress.Node, slow: bool) Parser {
+    pub fn init(allocator: std.mem.Allocator, tokens: []Token, file_table: *FileTable, progress: std.Progress.Node) Parser {
         return Parser{
             .file_table = file_table,
             .tokens = tokens,
             .allocator = allocator,
-            .io = io,
             .logger = .init(file_table),
             .types = std.ArrayList(TypeNode).initCapacity(allocator, tokens.len / 50) catch std.ArrayList(TypeNode).empty,
             .root_node = progress,
-            .slow = slow,
         };
     }
 
@@ -405,7 +400,6 @@ pub const Parser = struct {
         const top_node = self.root_node.start(msg, 1);
         defer top_node.end();
 
-        try self.sleepIfSlow(45);
         switch (self.peek().kind) {
             .kw_struct => return try self.parseStruct(&top_node),
             .kw_pub => return try self.parsePub(&top_node),
@@ -435,7 +429,6 @@ pub const Parser = struct {
     fn parseStmt(self: *Parser, previous: *std.Progress.Node) anyerror!*Node {
         var parent_node = previous.start("Statement", 1);
         defer parent_node.end();
-        try self.sleepIfSlow(75);
         switch (self.peek().kind) {
             .kw_ret => {
                 const stmt = try self.parseRet(&parent_node);
@@ -638,7 +631,6 @@ pub const Parser = struct {
                 return ParseError.ExpectedExpression;
             },
         };
-        try self.sleepIfSlow(40);
         while (!self.isAtEnd()) {
             const nextt = self.peek();
             const importance = self.getImportance(nextt.kind);
@@ -893,7 +885,6 @@ pub const Parser = struct {
                 },
             }
         }
-        try self.sleepIfSlow(80);
         return lhs;
     }
 
@@ -920,7 +911,6 @@ pub const Parser = struct {
                 try_node.increaseEstimatedTotalItems(1);
                 var node = try_node.start("Pointer modifier", 0);
                 errdefer node.end();
-                try self.sleepIfSlow(20);
 
                 _ = self.advance();
                 try mods.append(self.allocator, .ptr);
@@ -929,7 +919,6 @@ pub const Parser = struct {
                 try_node.increaseEstimatedTotalItems(1);
                 var node = try_node.start("Array modifier", 0);
                 defer node.end();
-                try self.sleepIfSlow(20);
 
                 _ = self.advance();
                 var size: ?*Node = null;
@@ -951,7 +940,6 @@ pub const Parser = struct {
         }
         try_node.end();
 
-        try self.sleepIfSlow(50);
         const base_t = self.advance();
         var ty: Type = blk: switch (base_t.kind) {
             .kw_i8 => .i8,
@@ -1008,7 +996,6 @@ pub const Parser = struct {
                     _ = try self.expect(.identifier, &this_node);
                 }
                 const pend = self.current;
-                try self.sleepIfSlow(60);
                 path_node.end();
 
                 var args_node = this_node.start("Arguments", 0);
@@ -1065,9 +1052,6 @@ pub const Parser = struct {
             .end = base_t.end,
         });
 
-        try self.sleepIfSlow(25);
-
-        try self.sleepIfSlow(15);
         try_node.end();
 
         for (mods.items) |mod| {
@@ -1098,7 +1082,6 @@ pub const Parser = struct {
             .start = base_t.start,
             .end = self.peek().end,
         });
-        try self.sleepIfSlow(45);
         return self.types.items.len - 1;
     }
 
@@ -1112,7 +1095,6 @@ pub const Parser = struct {
             self.current = start;
             return null;
         }
-        try self.sleepIfSlow(25);
         if (self.peek().kind == .identifier and
             (self.next().kind == .semicolon or self.next().kind == .assign))
         {
@@ -1140,7 +1122,6 @@ pub const Parser = struct {
 
                 return node;
             }
-            try self.sleepIfSlow(50);
             _ = try self.expect(.assign, &parent_node);
             const val = try self.parseExpr(0, &parent_node);
 
@@ -1159,7 +1140,6 @@ pub const Parser = struct {
                 .end = self.peek().end,
                 .file = self.tokens[name].file,
             };
-            try self.sleepIfSlow(40);
             return node;
             // good enough
         } else if (self.peek().kind == .kw_mut and self.next().kind == .identifier) {
@@ -1214,8 +1194,6 @@ pub const Parser = struct {
         var parent_node = previous.start("Try variable or function", 1);
         defer parent_node.end();
 
-        try self.sleepIfSlow(50);
-
         const start = self.current;
         const ty = try self.tryParseType(&parent_node);
         if (ty == null) {
@@ -1235,7 +1213,6 @@ pub const Parser = struct {
         }
 
         if (self.peek().kind == .identifier) {
-            try self.sleepIfSlow(80);
             switch (self.next().kind) {
                 .open_paren => { // fn with params
                     if (mut) {
@@ -1423,7 +1400,6 @@ pub const Parser = struct {
             val = null;
         }
 
-        try self.sleepIfSlow(80);
         const node = try self.allocator.create(Node);
         node.* = Node{
             .data = .{
@@ -1449,7 +1425,6 @@ pub const Parser = struct {
         _ = try self.expect(.open_paren, &if_node);
         const expr = try self.parseExpr(0, &if_node);
         _ = try self.expect(.close_paren, &if_node);
-        try self.sleepIfSlow(50);
 
         var body: *Node = undefined;
         if (self.matches(.open_body)) {
@@ -1668,7 +1643,6 @@ pub const Parser = struct {
         }
         _ = try self.expect(.semicolon, &parent_node);
 
-        try self.sleepIfSlow(50);
         if (self.matches(.close_paren)) {
             incr = null;
         } else {
@@ -1696,7 +1670,6 @@ pub const Parser = struct {
         } else {
             body = try self.parseStmt(&parent_node);
         }
-        try self.sleepIfSlow(50);
         node.* = Node{
             .data = .{
                 .for_stmt = .{
@@ -1713,115 +1686,6 @@ pub const Parser = struct {
         };
         return node;
     }
-
-    //fn parseClass(self: *Parser, previous: *const std.Progress.Node) !*Node {
-    //    var parent_node = previous.start("Parsing class", 1);
-    //    defer parent_node.end();
-    //
-    //    const start = self.current;
-    //    _ = try self.expect(.kw_class, &parent_node);
-    //
-    //    const name = self.current;
-    //    _ = try self.expect(.identifier, &parent_node);
-    //
-    // parameters are generics,
-    // i call them that because of the parentheses
-    //    var params: ?[]usize = undefined;
-    //    if (self.matches(.open_paren)) {
-    //        parent_node.increaseEstimatedTotalItems(1);
-    //        var this_node = parent_node.start("Parsing parameters", 0);
-    //        defer this_node.end();
-    //        _ = try self.expect(.open_paren, &this_node);
-
-    //       var paramsl = std.ArrayList(usize).empty;
-    //        while (!self.isAtEnd() and !self.matches(.close_paren)) {
-    //            try paramsl.append(self.allocator, self.current);
-    //            _ = try self.expect(.identifier, &this_node);
-    //
-    //            if (self.matches(.comma)) {
-    //                _ = try self.expect(.comma, &this_node);
-    //            } else {
-    //                break;
-    //            }
-    //};
-    //       _ = try self.expect(.close_paren, &this_node);
-    //       params = try paramsl.toOwnedSlice(self.allocator);
-    //    } else {
-    //        params = null;
-    //    }
-    //    var parents: ?[]usize = undefined;
-    //   if (self.matches(.colon)) {
-    //        parent_node.increaseEstimatedTotalItems(1);
-    //        var this_node = parent_node.start("Parsing parents", 0);
-    //       _ = try self.expect(.colon, &this_node);
-    //
-    //       var pars = std.ArrayList(usize).empty;
-    //       while (!self.isAtEnd()) {
-    //            try pars.append(self.allocator, self.current);
-    //            _ = try self.expect(.identifier, &this_node);
-    //            if (self.matches(.comma)) {
-    //                _ = try self.expect(.comma, &this_node);
-    //            } else {
-    //                break;
-    //            }
-    //        }
-    //         parents = try pars.toOwnedSlice(self.allocator);
-    //    } else {
-    //        parents = null;
-    //     }
-
-    //     const open = try self.expect(.open_body, &parent_node);
-    //     var body_node = parent_node.start("Parsing body", 0);
-    //     defer body_node.end();
-
-    //     var body = std.ArrayList(*Node).empty;
-    //     while (!self.isAtEnd() and !self.matches(.close_body)) {
-    //         body_node.increaseEstimatedTotalItems(1);
-    //         try self.sleepIfSlow(50);
-
-    //         if (self.matches(.kw_pub)) {
-    //             const mem = try self.parsePub(&body_node);
-    //             if (mem.data.pub_stmt.stmt.tag == .var_stmt)
-    //                 _ = try self.expect(.semicolon, &body_node);
-    //
-    //            try body.append(self.allocator, mem);
-    //        } else if (try self.tryParseVarOrFn(&body_node)) |mem| {
-    //            try body.append(self.allocator, mem);
-    //            if (mem.tag == .var_stmt)
-    //                _ = try self.expect(.semicolon, &body_node);
-    //        } else if (try self.tryParseVar(&body_node)) |mem| {
-    //            try body.append(self.allocator, mem);
-    //            _ = try self.expect(.semicolon, &body_node);
-    //        } else {
-    //            const found_mem = self.peek();
-    //            try self.logger.add(self.allocator, .{
-    //                .kind = .{ .ParseError = ParseError.UnexpectedKwInClassBody },
-    //                .start = found_mem.start,
-    //                .end = found_mem.end,
-    //                .note = .{ .message = "class body opened here", .start = open.start, .end = open.end },
-    //                .message = try std.fmt.allocPrint(self.allocator, "expected 'pub', a field or a method in class body, found '{s}' ({s})", .{ self.tokenText(found_mem), @tagName(found_mem.kind) }),
-    //            });
-    //            return ParseError.UnexpectedKwInClassBody;
-    //        }
-    //    }
-    //    _ = try self.expect(.close_body, &parent_node);
-
-    //    const node = try self.allocator.create(Node);
-    //    node.* = Node{
-    //        .data = .{
-    //            .class_stmt = .{
-    //                .name = name,
-    //                .params = params,
-    //                .parents = parents,
-    //                .fields = try body.toOwnedSlice(self.allocator),
-    //            },
-    //        },
-    //        .tag = .class_stmt,
-    //        .start = self.tokens[start].start,
-    //        .end = self.peek().end,
-    //    };
-    //    return node;
-    //}
 
     fn parseStruct(self: *Parser, previous: *const std.Progress.Node) !*Node {
         var this_node = previous.start("Struct", 0);
@@ -1903,7 +1767,6 @@ pub const Parser = struct {
                 .end = self.peek().end,
                 .file = self.tokens[start].file, // should be fine assuming the it isnt spread on multiple
             };
-            try self.sleepIfSlow(50);
             return node;
         } else if (try self.tryParseVarOrFn(&this_node)) |mem| {
             const node = try self.allocator.create(Node);
@@ -1918,7 +1781,6 @@ pub const Parser = struct {
                 .end = self.peek().end,
                 .file = self.tokens[start].file,
             };
-            try self.sleepIfSlow(50);
             return node;
         } else if (self.peek().kind == .kw_struct) {
             const n = try self.allocator.create(Node);
@@ -1950,9 +1812,5 @@ pub const Parser = struct {
             ),
         });
         return ParseError.ExpectedStatement;
-    }
-
-    fn sleepIfSlow(self: *Parser, milliseconds: u32) !void {
-        if (self.slow) try std.Io.sleep(self.io, std.Io.Duration.fromMilliseconds(milliseconds * 2), .awake);
     }
 };

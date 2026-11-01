@@ -11,7 +11,6 @@ const astprint = @import("astprint.zig");
 
 const CLIArgs = struct {
     help: u32,
-    slow: u32,
     ast: u32,
     tokens: u32,
 };
@@ -30,7 +29,6 @@ pub fn main(init: std.process.Init) !void {
 
     const params = comptime clap.parseParamsComptime(
         \\-h, --help            Display this message
-        \\-s, --slow            Artificially slow down the compiler (use this if you want to debug or if you want to see progress)
         \\-a, --ast             Print the AST instead of compiling it
         \\-t, --tokens          Print the tokens instead of compiling it
         \\zen                   See the current zen
@@ -65,7 +63,6 @@ pub fn main(init: std.process.Init) !void {
     const args = CLIArgs{
         .ast = res.args.ast,
         .help = res.args.help,
-        .slow = res.args.slow,
         .tokens = res.args.tokens,
     };
     try compileFile(res.positionals[0].?, init, args);
@@ -112,7 +109,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     /////////////////////////////////// lexer
     var lexer = lex.Lexer.init(0, &file_table);
     var lexer_progress = root_progress.start("Lexer", source.len / 12 + 3);
-    var tokens = lexer.run(arena, lexer_progress, args.slow != 0, if (args.slow != 0) io else null) catch std.process.exit(1);
+    var tokens = lexer.run(arena, lexer_progress) catch std.process.exit(1);
     lexer_progress.end();
 
     //////////////////////////////////// preprocessor
@@ -123,7 +120,6 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
         tokens,
         &pre_progress,
         &file_table,
-        args.slow != 0,
         io,
     );
     preprocessor.run() catch std.process.exit(1);
@@ -138,16 +134,11 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
 
     /////////////////////////////////// parser
     var parser_progress = root_progress.start("Parser", tokens.len / 25);
-    if (args.slow != 0) {
-        try std.Io.sleep(io, std.Io.Duration.fromMilliseconds(150), .awake);
-    }
     var parser = parse.Parser.init(
         arena,
-        io,
         tokens,
         &file_table,
         parser_progress,
-        args.slow != 0,
     );
     const ast = parser.run() catch std.process.exit(1);
     parser_progress.end();
@@ -161,13 +152,11 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     var checker_progress = root_progress.start("Semantic Analysis", ast.len);
     var checker = sema.Checker.init(
         arena,
-        io,
         ast,
         tokens,
         parser.types,
         &file_table,
         &checker_progress,
-        args.slow != 0,
     );
     checker.run() catch std.process.exit(1);
     checker_progress.end();

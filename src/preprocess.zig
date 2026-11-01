@@ -34,13 +34,12 @@ allocator: std.mem.Allocator,
 out: std.ArrayList(Token),
 
 root_node: *const std.Progress.Node,
-slow: bool,
 io: std.Io,
 
 libc_path: []const u8,
 file_table: *FileTable,
 
-pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, slow: bool, io: std.Io) !Preprocessor {
+pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std.Progress.Node, file_table: *FileTable, io: std.Io) !Preprocessor {
     return Preprocessor{
         .tokens = tokens,
         .macros = .initContext(allocator, .{}),
@@ -48,7 +47,6 @@ pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std
         .allocator = allocator,
         .out = try .initCapacity(allocator, tokens.len),
         .root_node = root_node,
-        .slow = slow,
         .io = io,
         .libc_path = try std.fs.path.join(allocator, &.{
             try std.process.executableDirPathAlloc(io, allocator),
@@ -59,21 +57,13 @@ pub fn init(allocator: std.mem.Allocator, tokens: []Token, root_node: *const std
     };
 }
 
-fn sleepIfSlow(self: *Preprocessor, time: u32) void {
-    std.Io.sleep(self.io, .fromMicroseconds(time), .awake) catch {};
-}
-
 fn peek(self: *Preprocessor) Token {
-    self.sleepIfSlow(150);
-
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
     return self.tokens[self.current];
 }
 
 fn advance(self: *Preprocessor) Token {
-    self.sleepIfSlow(110);
-
     if (self.isAtEnd())
         return self.tokens[self.current - 1];
 
@@ -83,8 +73,6 @@ fn advance(self: *Preprocessor) Token {
 }
 
 fn expect(self: *Preprocessor, expected: Token.Kind) !Token {
-    self.sleepIfSlow(190);
-
     const tkn = self.advance();
     if (tkn.kind != expected) {
         try self.logger.add(self.allocator, .{
@@ -411,7 +399,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
     var lex_progress = parent_node.start("Lexer", source.len / 27);
 
     var lexer = lex.Lexer.init(id, self.file_table);
-    const tokens = try lexer.run(self.allocator, lex_progress, self.slow, self.io);
+    const tokens = try lexer.run(self.allocator, lex_progress);
 
     lex_progress.end();
     // preprocessor
@@ -422,7 +410,6 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
         tokens,
         &pre_progress,
         self.file_table,
-        self.slow,
         self.io,
     );
     sub.macros = self.macros;
