@@ -123,11 +123,11 @@ pub const Token = struct {
     });
 };
 
-pub const LexError = error{
-    UnknownCharacter,
-    UnknownDirective,
-    UnclosedStringLiteral,
-    InvalidEscape,
+pub const LexError = enum(u8) {
+    UnknownCharacter = 0,
+    UnknownDirective = 1,
+    UnclosedStringLiteral = 2,
+    InvalidEscape = 3,
 };
 
 pub const Lexer = struct {

@@ -109,20 +109,20 @@ const ScopeMap = struct {
     }
 };
 
-pub const TypeError = error{
-    IncompatibleTypes,
-    UnknownType,
-    UnexpectedType,
-    CannotIndexType,
-    NonFunctionCall,
-    NotPublic,
-    UndeclaredIdentifier,
-    TypeMismatch,
-    NotAMember,
-    IndexByNonInt,
-    NameAlreadyDefined,
-    ExpectedStatement,
-    MismatchedVariableType,
+pub const TypeError = enum(u8) {
+    IncompatibleTypes = 0,
+    UnknownType = 1,
+    UnexpectedType = 2,
+    CannotIndexType = 3,
+    NonFunctionCall = 4,
+    NotPublic = 5,
+    UndeclaredIdentifier = 6,
+    TypeMismatch = 7,
+    NotAMember = 8,
+    IndexByNonInt = 9,
+    NameAlreadyDefined = 10,
+    ExpectedStatement = 11,
+    MismatchedVariableType = 12,
 };
 
 pub const Checker = struct {

@@ -14,13 +14,13 @@ const Macro = struct {
     end: usize,
 };
 
-pub const PreprocessorError = error{
-    UnexpectedToken,
-    RecursiveMacro,
-    RecursiveInclude,
-    UnterminatedDirective,
-    NoMatchingDirective,
-    IncludeError,
+pub const PreprocessorError = enum(u8) {
+    UnexpectedToken = 0,
+    RecursiveMacro = 1,
+    RecursiveInclude = 2,
+    UnterminatedDirective = 3,
+    NoMatchingDirective = 4,
+    IncludeError = 5,
 };
 
 current: usize = 0,
@@ -91,7 +91,7 @@ fn expect(self: *Preprocessor, expected: Token.Kind) !Token {
             .message = "unexpected token",
             .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
         });
-        return PreprocessorError.UnexpectedToken;
+        return error.UnexpectedToken;
     }
     return tkn;
 }
@@ -214,7 +214,7 @@ fn include(self: *Preprocessor) !void {
                 .message = "expected string or '<' after '#include'",
                 .kind = .{ .PreprocessorError = PreprocessorError.UnexpectedToken },
             });
-            return PreprocessorError.UnexpectedToken;
+            return error.UnexpectedToken;
         },
     }
 }
@@ -293,7 +293,7 @@ fn procIf(self: *Preprocessor, parent_discard: bool, condition: bool) !void {
         }
     }
 
-    return PreprocessorError.NoMatchingDirective;
+    return error.NoMatchingDirective;
 }
 
 fn elif(self: *Preprocessor) !bool {
@@ -336,7 +336,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
             .message = "reached maximum file import limit (255)",
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
-        return PreprocessorError.IncludeError;
+        return error.IncludeError;
     }
     // check extension
     if (!std.mem.eql(u8, std.fs.path.extension(path), ".msh")) {
@@ -347,7 +347,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
             .message = "file name does not end in .msh",
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
-        return PreprocessorError.IncludeError;
+        return error.IncludeError;
     }
     // check for same path
     const cleanp1 = try std.fs.path.resolveAlloc(self.allocator, &.{path});
@@ -366,7 +366,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
                 .message = "a file including itself would result in an infinite loop, crashing the compiler",
             },
         });
-        return PreprocessorError.IncludeError;
+        return error.IncludeError;
     }
     // open file
     const file = std.Io.Dir.openFileAbsolute(self.io, path, .{
@@ -385,7 +385,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
                 .message = "this file is from libc: if it was not found, reinstall the compiler or move it back",
             } else null,
         });
-        return PreprocessorError.IncludeError;
+        return error.IncludeError;
     };
     defer file.close(self.io);
 
@@ -400,7 +400,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
             .message = try self.allocator.print("encountered error reading file: {s}", .{@errorName(e)}),
             .kind = .{ .PreprocessorError = PreprocessorError.IncludeError },
         });
-        return PreprocessorError.IncludeError;
+        return error.IncludeError;
     };
     // now we can finally read it...
     const id = self.file_table.addFile(path, source);
@@ -473,7 +473,7 @@ fn expand(self: *Preprocessor, tkn: Token, new: *std.ArrayList(Token)) !bool {
                     .message = "used here",
                 },
             });
-            return PreprocessorError.RecursiveMacro;
+            return error.RecursiveMacro;
         }
 
         macro.used = true;

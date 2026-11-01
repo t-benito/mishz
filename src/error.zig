@@ -7,11 +7,11 @@ const Parse_Error = @import("parse.zig").ParseError;
 const Type_Error = @import("sema.zig").TypeError;
 const Pre_Error = @import("preprocess.zig").Preprocessor.PreprocessorError;
 
-pub const ErrorType = union(enum) {
-    ParseError: Parse_Error,
-    LexError: Lex_Error,
-    TypeError: Type_Error,
-    PreprocessorError: Pre_Error,
+pub const ErrorType = union(enum(u8)) {
+    ParseError: Parse_Error = 1,
+    LexError: Lex_Error = 2,
+    TypeError: Type_Error = 3,
+    PreprocessorError: Pre_Error = 4,
 };
 
 pub const Note = struct {
@@ -51,23 +51,16 @@ pub const ErrorLogger = struct {
         try self.errors.append(allocator, err);
     }
 
-    fn hashEStr(str: []const u8) u32 {
-        var h: u32 = 2333;
-        for (str) |c| {
-            h ^= c;
-            h = h *% 16245;
-        }
-        return h % 10000;
-    }
-
     fn kindName(allocator: std.mem.Allocator, kind: ErrorType) []const u8 {
-        const errname = switch (kind) {
-            .LexError => |e| @errorName(e),
-            .PreprocessorError => |e| @errorName(e),
-            .ParseError => |e| @errorName(e),
-            .TypeError => |e| @errorName(e),
-        };
-        return allocator.print("E{d}", .{hashEStr(errname)}) catch "E-1";
+        const _1: u16 = @intCast(@backingInt(kind));
+        const _2: u16 = @intCast(switch (kind) {
+            .LexError => |e| @backingInt(e),
+            .PreprocessorError => |e| @backingInt(e),
+            .ParseError => |e| @backingInt(e),
+            .TypeError => |e| @backingInt(e),
+        });
+
+        return allocator.print("E{d}", .{_1 * 1000 + _2}) catch "E";
     }
 
     pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator, writer: *std.Io.Writer) !bool {

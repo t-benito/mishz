@@ -195,16 +195,16 @@ pub const Node = struct {
     file: u8,
 };
 
-pub const ParseError = error{
-    UnexpectedToken,
-    ExpectedStatement,
-    ExpectedTopLevelStatement,
-    ExpectedVariableStmt,
-    ExpectedExpression,
-    ExpectedTypeExpression,
-    UnexpectedKwInStruct,
-    UnexpectedDefaultValue,
-    MutFunction,
+pub const ParseError = enum(u8) {
+    UnexpectedToken = 0,
+    ExpectedStatement = 1,
+    ExpectedTopLevelStatement = 2,
+    ExpectedVariableStmt = 3,
+    ExpectedExpression = 4,
+    ExpectedTypeExpression = 5,
+    UnexpectedKwInStruct = 6,
+    UnexpectedDefaultValue = 7,
+    MutFunction = 8,
 };
 
 pub const Parser = struct {
@@ -281,7 +281,7 @@ pub const Parser = struct {
         const newname = try std.fmt.allocPrint(self.allocator, "\x1b[31m{s}\x1b[0m", .{node.getName()});
         node.setName(newname);
 
-        return ParseError.UnexpectedToken;
+        return error.UnexpectedToken;
     }
 
     fn describeKind(kind: Token.Kind) []const u8 {
@@ -423,7 +423,7 @@ pub const Parser = struct {
                 },
             ),
         });
-        return ParseError.ExpectedTopLevelStatement;
+        return error.ExpectedTopLevelStatement;
     }
 
     fn parseStmt(self: *Parser, previous: *std.Progress.Node) anyerror!*Node {
@@ -629,7 +629,7 @@ pub const Parser = struct {
                         },
                     ),
                 });
-                return ParseError.ExpectedExpression;
+                return error.ExpectedExpression;
             },
         };
         while (!self.isAtEnd()) {
@@ -658,7 +658,7 @@ pub const Parser = struct {
                             .file = old.file,
                         };
                     } else {
-                        return ParseError.ExpectedTypeExpression;
+                        return error.ExpectedTypeExpression;
                     }
                 },
                 .arrow => {
@@ -1187,7 +1187,7 @@ pub const Parser = struct {
                             .message = "function cannot be 'mut'",
                             .kind = .{ .ParseError = ParseError.MutFunction },
                         });
-                        return ParseError.MutFunction;
+                        return error.MutFunction;
                     }
 
                     parent_node.setName("Function");
@@ -1250,7 +1250,7 @@ pub const Parser = struct {
                                 },
                             });
                             self.current = start;
-                            return ParseError.ExpectedTypeExpression;
+                            return error.ExpectedTypeExpression;
                         }
                     }
                     _ = try self.expect(.close_paren, &parent_node);
@@ -1287,7 +1287,7 @@ pub const Parser = struct {
                             .message = "functions cannot be 'mut'",
                             .kind = .{ .ParseError = ParseError.MutFunction },
                         });
-                        return ParseError.MutFunction;
+                        return error.MutFunction;
                     }
 
                     parent_node.setName("Function");
@@ -1596,7 +1596,7 @@ pub const Parser = struct {
                     },
                 ),
             });
-            return ParseError.ExpectedVariableStmt;
+            return error.ExpectedVariableStmt;
         }
         _ = try self.expect(.semicolon, &parent_node);
 
@@ -1678,7 +1678,7 @@ pub const Parser = struct {
                         .message = "structs cannot have default values",
                         .kind = .{ .ParseError = ParseError.UnexpectedDefaultValue },
                     });
-                    return ParseError.UnexpectedDefaultValue;
+                    return error.UnexpectedDefaultValue;
                 }
                 try fields.append(self.allocator, n);
             } else {
@@ -1689,7 +1689,7 @@ pub const Parser = struct {
                     .message = "expected field in struct body",
                     .kind = .{ .ParseError = ParseError.UnexpectedKwInStruct },
                 });
-                return ParseError.UnexpectedKwInStruct;
+                return error.UnexpectedKwInStruct;
             }
             _ = try self.expect(.semicolon, &this_node);
         }
@@ -1775,6 +1775,6 @@ pub const Parser = struct {
                 },
             ),
         });
-        return ParseError.ExpectedStatement;
+        return error.ExpectedStatement;
     }
 };
