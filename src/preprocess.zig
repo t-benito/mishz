@@ -394,7 +394,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
         return PreprocessorError.IncludeError;
     };
     // now we can finally read it...
-    const id = try self.file_table.addFile(self.allocator, path, source);
+    const id = self.file_table.addFile(path, source);
     // lexer
     var lex_progress = parent_node.start("Lexer", source.len / 27);
 

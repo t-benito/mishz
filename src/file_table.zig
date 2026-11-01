@@ -2,36 +2,20 @@ pub const FileTable = @This();
 
 const std = @import("std");
 
-paths: [][]const u8,
-sources: [][]const u8,
-len: u8 = 1,
+paths: [256][]const u8 = undefined,
+sources: [256][]const u8 = undefined,
+len: u8 = 0,
 
-pub fn init(allocator: std.mem.Allocator, main_path: []const u8, main_source: []const u8) !FileTable {
-    var paths = try std.ArrayList([]const u8).initCapacity(allocator, 256);
-    errdefer paths.deinit(allocator);
-    try paths.append(allocator, main_path);
+pub fn init(main_path: []const u8, main_source: []const u8) FileTable {
+    var self = FileTable{};
+    self.paths[0] = main_path;
+    self.sources[0] = main_source;
+    self.len = 1;
 
-    var sources = try std.ArrayList([]const u8).initCapacity(allocator, 256);
-    errdefer paths.deinit(allocator);
-    try sources.append(allocator, main_source);
-
-    return .{
-        .paths = try paths.toOwnedSlice(allocator),
-        .sources = try sources.toOwnedSlice(allocator),
-    };
+    return self;
 }
 
-/// incase its ever needed
-pub fn deinit(self: *FileTable, allocator: std.mem.Allocator) void {
-    for (self.paths) |i| {
-        allocator.free(i);
-    }
-    for (self.sources) |i| {
-        allocator.free(i);
-    }
-}
-
-pub fn addFile(self: *FileTable, _: std.mem.Allocator, path: []const u8, source: []const u8) !u8 {
+pub fn addFile(self: *FileTable, path: []const u8, source: []const u8) u8 {
     self.paths[self.len] = path;
     self.sources[self.len] = source;
     self.len += 1;

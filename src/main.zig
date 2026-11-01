@@ -5,7 +5,7 @@ const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
 const preprocess = @import("preprocess.zig");
 const parse = @import("parse.zig");
-const sema = @import("sema.zig");
+//const sema = @import("sema.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
 
@@ -104,7 +104,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
         cwd,
         path,
     });
-    var file_table = try FileTable.init(arena, total, source);
+    var file_table = FileTable.init(total, source);
 
     /////////////////////////////////// lexer
     var lexer = lex.Lexer.init(0, &file_table);
@@ -128,7 +128,11 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     pre_progress.end();
 
     if (args.tokens != 0) {
-        try tknprint.print(tokens, &file_table, io, arena);
+        var buffer: [65535]u8 = undefined;
+        var stdout = std.Io.File.stdout().writer(io, &buffer);
+        const writer = &stdout.interface;
+
+        try tknprint.print(tokens, &file_table, writer);
         return;
     }
 
@@ -144,22 +148,27 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     parser_progress.end();
 
     if (args.ast != 0) {
-        astprint.printAst(ast, 0);
+        var buffer: [65535]u8 = undefined;
+        var stdout = std.Io.File.stdout().writer(io, &buffer);
+        const writer = &stdout.interface;
+
+        try astprint.printAst(ast, 0, writer);
+        try writer.flush();
         return;
     }
 
     /////////////////////////////////// sema
-    var checker_progress = root_progress.start("Semantic Analysis", ast.len);
-    var checker = sema.Checker.init(
-        arena,
-        ast,
-        tokens,
-        parser.types,
-        &file_table,
-        &checker_progress,
-    );
-    checker.run() catch std.process.exit(1);
-    checker_progress.end();
+    // var checker_progress = root_progress.start("Semantic Analysis", ast.len);
+    // var checker = sema.Checker.init(
+    //     arena,
+    //     ast,
+    //     tokens,
+    //     parser.types,
+    //     &file_table,
+    //     &checker_progress,
+    // );
+    // checker.run() catch std.process.exit(1);
+    // checker_progress.end();
 }
 
 fn printZen(io: std.Io, allocator: std.mem.Allocator, stdout: std.Io.File) !void {

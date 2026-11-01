@@ -177,16 +177,7 @@ pub const Type = union(enum) {
         name: []const u8,
         fields: []Field,
     },
-    named: struct { // TODO remove this
-        path: struct { // skip the dots later on
-            start: usize,
-            end: usize,
-        },
-        args: ?struct {
-            start: TypeID,
-            end: usize, // easeier
-        },
-    },
+    named: usize,
 };
 
 pub const TypeNode = struct {
@@ -983,63 +974,7 @@ pub const Parser = struct {
                     },
                 };
             },
-            .identifier => {
-                var this_node = parent_node.start("Named type", 2);
-                defer this_node.end();
-
-                const pstart = self.current - 1;
-
-                var path_node = this_node.start("Path", 0);
-
-                while (self.matches(.dot)) {
-                    _ = try self.expect(.dot, &this_node);
-                    _ = try self.expect(.identifier, &this_node);
-                }
-                const pend = self.current;
-                path_node.end();
-
-                var args_node = this_node.start("Arguments", 0);
-                defer args_node.end();
-
-                if (self.matches(.open_paren)) {
-                    _ = try self.expect(.open_paren, &this_node);
-                    const astart = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
-                    while (!self.matches(.close_paren)) {
-                        if (try self.tryParseType(&this_node)) |ty| {
-                            _ = ty;
-                        } else {
-                            return null;
-                        }
-                        if (self.peek().kind != .close_paren) {
-                            _ = try self.expect(.comma, &this_node);
-                        }
-                    }
-                    _ = try self.expect(.close_paren, &this_node);
-                    const aend = self.types.items.len - 1;
-                    break :blk Type{
-                        .named = .{
-                            .path = .{
-                                .start = pstart,
-                                .end = pend,
-                            },
-                            .args = .{
-                                .start = astart,
-                                .end = aend,
-                            },
-                        },
-                    };
-                } else {
-                    break :blk Type{
-                        .named = .{
-                            .path = .{
-                                .start = pstart,
-                                .end = pend,
-                            },
-                            .args = null,
-                        },
-                    };
-                }
-            },
+            .identifier => break :blk Type{ .named = self.current - 1 },
             else => {
                 self.current = start;
                 return null;
