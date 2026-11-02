@@ -123,12 +123,14 @@ pub const TypeError = enum(u8) {
     NameAlreadyDefined = 10,
     ExpectedStatement = 11,
     MismatchedVariableType = 12,
+    WrongTypeOfAccess = 13,
 };
 
 pub const Checker = struct {
     scope_map: ScopeMap,
 
     ast: []*Node,
+    writer: *std.Io.Writer,
     types: std.ArrayList(TypeNode),
     tokens: []Token,
     file_table: *FileTable,
@@ -141,6 +143,7 @@ pub const Checker = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
+        writer: *std.Io.Writer,
         ast: []*Node,
         tokens: []Token,
         types: std.ArrayList(TypeNode),
@@ -150,6 +153,7 @@ pub const Checker = struct {
         return .{
             .scope_map = .init(allocator),
             .ast = ast,
+            .writer = writer,
             .types = types,
             .tokens = tokens,
             .file_table = file_table,
@@ -170,11 +174,10 @@ pub const Checker = struct {
             self.precheckTop(node, self.root_node, false) catch {};
         }
 
-        try self.scope_map.enter();
         for (self.ast) |node| {
             self.checkTop(node, self.root_node) catch {};
         }
-        if (self.logger.dump(self.allocator)) {
+        if (self.logger.dump(self.allocator, self.writer)) {
             return error.checker;
         }
     }
@@ -280,7 +283,7 @@ pub const Checker = struct {
                         .start = node.start,
                         .end = node.end,
                         .public = public,
-                        .data = 0,
+                        .data = .{},
                     },
                     &self.logger,
                 );
@@ -360,7 +363,7 @@ pub const Checker = struct {
                 parent_node.setName("Public top-level statement");
                 try self.checkTop(node.data.pub_stmt.stmt, &parent_node);
             },
-            .struct_stmt => {},
+            .struct_stmt => {}, // TODO: make
             else => unreachable, // ?
         }
     }
@@ -404,7 +407,7 @@ pub const Checker = struct {
                 }
             },
             .ret_stmt => {
-                parent_node.setName("Ret");
+                parent_node.setName("Return");
 
                 const v = &stmt.data.ret_stmt;
                 if (v.val) |val| {
@@ -462,10 +465,19 @@ pub const Checker = struct {
                     try self.scope_map.enter();
                     block = true;
                 }
-                defer if (block)
-                    self.scope_map.exit();
-
                 try self.checkStmt(stmt.data.if_stmt.body, ret_ty, fn_start, &parent_node);
+                if (block)
+                    self.scope_map.exit();
+                if (stmt.data.if_stmt.else_branch) |els| {
+                    parent_node.setName("Else");
+
+                    block = els.tag == .block;
+                    if (block)
+                        try self.scope_map.enter();
+                    try self.checkStmt(els, ret_ty, fn_start, &parent_node);
+                    if (block)
+                        self.scope_map.exit();
+                }
             },
             .block => {
                 parent_node.setName("Block");
@@ -595,6 +607,19 @@ pub const Checker = struct {
                 });
                 return TypeError.UnexpectedType;
             },
+            .pointer_access => blk: {
+                const pa = &node.data.property_access;
+                const target_ty = try self.checkExpr(pa.target);
+                if (target_ty != .ptr) {
+                    try self.logger.add(self.allocator, .{
+                        .start = pa.target.start,
+                        .end = pa.target.end,
+                        .file = pa.target.file,
+                        .kind = .{ .TypeError = TypeError.WrongTypeOfAccess },
+                        .message = "pointer access '->' must only be used on pointers, use '.' instead",
+                    });
+                }
+            },
             .property_access => blk: {
                 const pa = &node.data.property_access;
                 const target_ty = try self.checkExpr(pa.target);
@@ -628,7 +653,7 @@ pub const Checker = struct {
                     .kind = .{ .TypeError = TypeError.NotAMember },
                     .message = try std.fmt.allocPrint(self.allocator, "type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
                 });
-                return TypeError.UnexpectedType;
+                return error.UnexpectedType;
             },
             .array_access => blk: {
                 const aa = &node.data.array_access;
@@ -643,7 +668,7 @@ pub const Checker = struct {
                         .kind = .{ .TypeError = TypeError.IndexByNonInt },
                         .message = "array index must be an integer",
                     });
-                    return TypeError.IndexByNonInt;
+                    return error.IndexByNonInt;
                 }
 
                 switch (target_ty) {
@@ -657,7 +682,7 @@ pub const Checker = struct {
                             .kind = .{ .TypeError = TypeError.CannotIndexType },
                             .message = try std.fmt.allocPrint(self.allocator, "cannot index non-indexable type '{s}'", .{@tagName(target_ty)}),
                         });
-                        return TypeError.UnexpectedType;
+                        return error.UnexpectedType;
                     },
                 }
             },
@@ -699,7 +724,7 @@ pub const Checker = struct {
             => blk: {
                 const lhs = try self.checkExpr(node.data.binary_op.left);
                 const rhs = try self.checkExpr(node.data.binary_op.right);
-                if (!(isNum(lhs) or isNum(rhs))) {
+                if (!(isNum(lhs) and isNum(rhs))) {
                     try self.logger.add(self.allocator, Error{
                         .start = node.start,
                         .end = node.end,

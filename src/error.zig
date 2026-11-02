@@ -167,10 +167,10 @@ pub const ErrorLogger = struct {
                 b = width;
             if (b <= a)
                 b = a + 1;
-            for (0..a) |_| {
+            for (a..b) |_| {
                 try writer.writeByte('^');
             }
         }
-        std.debug.print("{s}\n", .{RESET});
+        try writer.print("{s}\n", .{RESET});
     }
 };

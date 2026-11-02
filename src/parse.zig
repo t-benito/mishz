@@ -233,7 +233,7 @@ pub const Parser = struct {
             .allocator = allocator,
             .logger = .init(file_table),
             .writer = writer,
-            .types = std.ArrayList(TypeNode).initCapacity(allocator, tokens.len / 50) catch std.ArrayList(TypeNode).empty,
+            .types = std.ArrayList(TypeNode).initCapacity(allocator, tokens.len / 30) catch std.ArrayList(TypeNode).empty,
             .root_node = progress,
         };
     }
@@ -364,7 +364,7 @@ pub const Parser = struct {
     }
 
     pub fn run(self: *Parser) ![]*Node {
-        var nodes = try std.ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 6);
+        var nodes = try std.ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 4);
         while (!self.isAtEnd()) {
             const top = self.parseTop() catch {
                 self.syncErr();
@@ -384,7 +384,7 @@ pub const Parser = struct {
         var parent_node = previous.start("Body", 0);
         defer parent_node.end();
 
-        var body = try std.ArrayList(*Node).initCapacity(self.allocator, 8);
+        var body = try std.ArrayList(*Node).initCapacity(self.allocator, 24);
         while (!self.isAtEnd()) {
             if (self.peek().kind == .close_body) {
                 break;
@@ -887,7 +887,7 @@ pub const Parser = struct {
                         else => unreachable,
                     };
 
-                    const rhs = try self.parseExpr(min, &parent_node);
+                    const rhs = try self.parseExpr(importance, &parent_node);
 
                     const old = lhs;
                     lhs = try self.allocator.create(Node);
@@ -926,7 +926,6 @@ pub const Parser = struct {
 
         var try_node = parent_node.start("Collecting type modifiers", 0);
         errdefer try_node.end();
-
         while (!self.isAtEnd()) {
             if (self.matches(.star)) {
                 try_node.increaseEstimatedTotalItems(1);
@@ -959,7 +958,6 @@ pub const Parser = struct {
                 });
             } else break;
         }
-        try_node.end();
 
         const base_t = self.advance();
         var ty: Type = blk: switch (base_t.kind) {
@@ -1023,20 +1021,20 @@ pub const Parser = struct {
             switch (mod) {
                 .ptr => {
                     ty = Type{
-                        .ptr = self.types.items.len,
+                        .ptr = self.types.items.len - 1,
                     };
                 },
                 .array => {
                     ty = Type{
                         .array = .{
-                            .ty = self.types.items.len,
+                            .ty = self.types.items.len - 1,
                             .len = mod.array,
                         },
                     };
                 },
                 .slice => {
                     ty = Type{
-                        .slice = self.types.items.len,
+                        .slice = self.types.items.len - 1,
                     };
                 },
             }

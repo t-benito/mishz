@@ -53,7 +53,7 @@ pub fn init(
         .macros = .initContext(allocator, .{}),
         .logger = .init(file_table),
         .allocator = allocator,
-        .out = try .initCapacity(allocator, tokens.len),
+        .out = try .initCapacity(allocator, tokens.len * 2),
         .root_node = root_node,
         .io = io,
         .writer = writer,
@@ -120,6 +120,7 @@ fn checkTkn(self: *Preprocessor) !void {
         .pre_ifdef => try self.ifdef(false),
         .pre_ifndef => try self.ifndef(false),
         .pre_define => try self.define(),
+        .pre_undef => try self.undef(),
         .pre_include => try self.include(),
         .pre_else, .pre_elif, .pre_endif => {
             const tkn = self.advance();
@@ -159,6 +160,12 @@ fn checkTknIf(self: *Preprocessor, discard: bool) anyerror //error{
                 self.skipLine()
             else
                 try self.define();
+        },
+        .pre_undef => {
+            if (discard)
+                self.skipLine()
+            else
+                try self.undef();
         },
         .pre_include => {
             if (discard)
@@ -236,6 +243,14 @@ fn define(self: *Preprocessor) !void {
         .end = n.end,
         .tokens = try tokens.toOwnedSlice(self.allocator),
     });
+}
+
+fn undef(self: *Preprocessor) !void {
+    _ = self.advance();
+    const n = try self.expect(.identifier);
+    const name = self.file_table.spanStr(n.file, n.start, n.end);
+
+    _ = self.macros.remove(name);
 }
 
 fn ifdef(self: *Preprocessor, parent_discard: bool) !void {
@@ -432,7 +447,7 @@ fn inclFile(self: *Preprocessor, path: []const u8, comptime from_libc: bool, sta
 }
 
 fn replace(self: *Preprocessor) !bool {
-    var new = std.ArrayList(Token).empty;
+    var new = try std.ArrayList(Token).initCapacity(self.allocator, self.tokens.len + self.macros.count() * 4);
     defer new.deinit(self.allocator);
 
     var found_any = false;

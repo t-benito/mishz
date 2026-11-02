@@ -47,6 +47,7 @@ pub const Token = struct {
         at,
 
         pre_define,
+        pre_undef,
         //pre_macro,
         //pre_endmacro,
         pre_ifdef,
@@ -89,6 +90,7 @@ pub const Token = struct {
 
     pub const Keywords = std.StaticStringMap(Token.Kind).initComptime(.{
         .{ "#define", .pre_define },
+        .{ "#undef", .pre_undef },
         .{ "#ifdef", .pre_ifdef },
         .{ "#ifndef", .pre_ifndef },
         .{ "#endif", .pre_endif },
@@ -181,7 +183,7 @@ pub const Lexer = struct {
 
     pub fn run(self: *Lexer, allocator: std.mem.Allocator, writer: *std.Io.Writer, progress: std.Progress.Node) ![]Token {
         var inits = progress.start("Initializing", 0);
-        var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 7);
+        var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 3);
 
         var run_progress = progress.start("Running", 0);
 
@@ -295,7 +297,7 @@ pub const Lexer = struct {
             }
 
             if (std.ascii.isAlphabetic(self.peek()) or self.peek() == '_') {
-                while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_' or self.peek() == ':') {
+                while (!self.isAtEnd() and (std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_' or self.peek() == ':')) {
                     _ = self.advance();
                 }
                 const str = self.source[start..self.current];
