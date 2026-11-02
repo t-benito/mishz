@@ -110,7 +110,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try printIndent(child_indent, writer);
                 try writer.print("name_token_index: {}\n", .{node.data.field_init.name});
                 try printAst((&node.data.field_init.val)[0..1], child_indent, writer);
-            }
+            },
         }
     }
 }
