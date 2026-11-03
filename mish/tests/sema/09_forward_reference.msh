@@ -5,5 +5,5 @@ pub void first() {
 }
 
 pub void second(i32 val) {
-    ret;
+  return;
 }

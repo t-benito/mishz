@@ -5,4 +5,6 @@ pub void test_assignment_type_mismatch() {
 
     bool flag = true;
     flag = 0;
+
+    if (flag) {}
 }

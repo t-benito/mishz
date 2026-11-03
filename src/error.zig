@@ -167,9 +167,10 @@ pub const ErrorLogger = struct {
                 b = width;
             if (b <= a)
                 b = a + 1;
-            for (a..b) |_| {
+            for (0..a) |_|
+                try writer.writeByte(' ');
+            for (a..b) |_|
                 try writer.writeByte('^');
-            }
         }
         try writer.print("{s}\n", .{RESET});
     }

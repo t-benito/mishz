@@ -124,6 +124,8 @@ pub const TypeError = enum(u8) {
     ExpectedStatement = 11,
     MismatchedVariableType = 12,
     WrongTypeOfAccess = 13,
+    UnknownSliceProperty = 14,
+    MustBeInit = 15,
 };
 
 pub const Checker = struct {
@@ -177,7 +179,7 @@ pub const Checker = struct {
         for (self.ast) |node| {
             self.checkTop(node, self.root_node) catch {};
         }
-        if (self.logger.dump(self.allocator, self.writer)) {
+        if (try self.logger.dump(self.allocator, self.writer)) {
             return error.checker;
         }
     }
@@ -269,26 +271,26 @@ pub const Checker = struct {
 
                 try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
             },
-            .struct_stmt => {
-                parent_node.setName("Precheck struct");
-
-                try self.scope_map.define(
-                    self.file_table.spanStr(
-                        node.file,
-                        self.tokens[node.data.struct_stmt.name].start,
-                        self.tokens[node.data.struct_stmt.name].end,
-                    ),
-                    Symbol{
-                        .kind = .strct,
-                        .start = node.start,
-                        .end = node.end,
-                        .public = public,
-                        .data = .{},
-                    },
-                    &self.logger,
-                );
-            },
-            else => unreachable,
+            //.struct_stmt => {
+            //    parent_node.setName("Precheck struct");
+            //
+            //   try self.scope_map.define(
+            //       self.file_table.spanStr(
+            //           node.file,
+            //           self.tokens[node.data.struct_stmt.name].start,
+            //           self.tokens[node.data.struct_stmt.name].end,
+            //       ),
+            //       Symbol{
+            //           .kind = .strct,
+            //           .start = node.start,
+            //           .end = node.end,
+            //           .public = public,
+            //            .data = .{},
+            //       },
+            //       &self.logger,
+            //   );
+            //},
+            else => unreachable, // TODO
         }
     }
 
@@ -510,12 +512,60 @@ pub const Checker = struct {
                     });
                 }
             },
+            .for_stmt => {
+                parent_node.setName("For");
+
+                const f = &stmt.data.for_stmt;
+                try self.scope_map.enter();
+                defer self.scope_map.exit();
+
+                if (f.vari) |vari| {
+                    const n = self.tokens[vari.data.var_stmt.name];
+                    try self.scope_map.define(
+                        self.file_table.spanStr(n.file, n.start, n.end),
+                        Symbol{
+                            .start = vari.start,
+                            .end = vari.end,
+                            .file = vari.file,
+                            .kind = .vari,
+                            .data = .{
+                                .vari = vari.data.var_stmt.ty,
+                            },
+                        },
+                        &self.logger,
+                    );
+
+                    const ty = try self.checkExpr(vari);
+                    if (!isNum(ty))
+                        try self.logger.add(self.allocator, .{
+                            .start = vari.start,
+                            .end = vari.end,
+                            .file = vari.file,
+                            .kind = .{ .TypeError = TypeError.TypeMismatch },
+                            .message = "expected number as for loop variable type",
+                        });
+                    if (vari.data.var_stmt.val == null or try self.checkExpr(vari.data.var_stmt.val.?) == .nullt)
+                        try self.logger.add(self.allocator, .{
+                            .start = vari.start,
+                            .end = vari.end,
+                            .file = vari.file,
+                            .kind = .{ .TypeError = TypeError.MustBeInit },
+                            .message = "incrementor of for loop must be initialized and not null",
+                        });
+
+                    if (f.cond) |cond| {
+                        _ = try self.checkExpr(cond);
+                        if (f.incr) |incr| {
+                            _ = try self.checkExpr(incr);
+                        }
+                    }
+                }
+                try self.checkStmt(f.body, ret_ty, fn_start, &parent_node);
+            },
             .call => {
                 parent_node.setName("Call");
                 _ = try self.checkExpr(stmt);
             },
-            .for_stmt,
-            => _ = try self.checkExpr(stmt),
             else => try self.logger.add(self.allocator, .{
                 .start = stmt.start,
                 .end = stmt.end,
@@ -535,6 +585,7 @@ pub const Checker = struct {
                         .vari => self.types.items[sym.data.vari].ty,
                         .func => self.types.items[sym.data.func.returns].ty, // not sure about this... TODO(perhaps): construct a function type for the fn
                         .param => self.types.items[sym.data.param].ty,
+                        .strct => unreachable, // TODO
                     };
                 }
                 try self.logger.add(self.allocator, Error{
@@ -544,7 +595,7 @@ pub const Checker = struct {
                     .kind = .{ .TypeError = TypeError.UndeclaredIdentifier },
                     .message = try self.allocator.print("use of undeclared identifier '{s}'", .{ident_str}),
                 });
-                return TypeError.UnknownType;
+                return error.UnknownType;
             },
             .call => blk: {
                 const c = &node.data.call;
@@ -556,18 +607,18 @@ pub const Checker = struct {
                             .end = c.callee.end,
                             .file = c.callee.file,
                             .kind = .{ .TypeError = TypeError.NotPublic },
-                            .message = "attempt to call non-public function defined in another the file",
+                            .message = "attempt to call non-public function defined in another file",
                             .note = .{
                                 .start = sym.start,
                                 .end = sym.end,
                                 .file = sym.file,
                                 .message = try self.allocator.print(
-                                    "defined here (in file '{s}')",
+                                    "defined in file '{s}'",
                                     .{self.file_table.getPath(sym.file)},
                                 ),
                             },
                         });
-                        return TypeError.NotPublic;
+                        return error.NotPublic;
                     }
 
                     if (sym.kind == .func) {
@@ -587,7 +638,7 @@ pub const Checker = struct {
                                             .{ @tagName(expected_ty), @tagName(arg_ty) },
                                         ),
                                     });
-                                    return TypeError.TypeMismatch;
+                                    return error.TypeMismatch;
                                 } // this nesting sucks
                             }
                         }
@@ -605,7 +656,7 @@ pub const Checker = struct {
                     .kind = .{ .TypeError = TypeError.NonFunctionCall },
                     .message = try std.fmt.allocPrint(self.allocator, "cannot call non-function '{s}'", .{callee_ident}),
                 });
-                return TypeError.UnexpectedType;
+                return error.UnexpectedType;
             },
             .pointer_access => blk: {
                 const pa = &node.data.property_access;
@@ -618,7 +669,47 @@ pub const Checker = struct {
                         .kind = .{ .TypeError = TypeError.WrongTypeOfAccess },
                         .message = "pointer access '->' must only be used on pointers, use '.' instead",
                     });
+                    break :blk error.WrongTypeOfAccess;
                 }
+                const prop_name = self.file_table.spanStr(
+                    self.tokens[pa.name].file,
+                    self.tokens[pa.name].start,
+                    self.tokens[pa.name].end,
+                );
+
+                switch (self.types.items[target_ty.ptr].ty) {
+                    .slice => |inner_id| {
+                        if (std.mem.eql(u8, prop_name, "len")) {
+                            break :blk .u64;
+                        } else if (std.mem.eql(u8, prop_name, "ptr")) {
+                            const ptr_type_id = self.types.items.len;
+                            try self.types.append(self.allocator, .{
+                                .ty = .{ .ptr = inner_id },
+                                .start = node.start,
+                                .end = node.end,
+                            });
+                            break :blk self.types.items[ptr_type_id].ty;
+                        }
+                        try self.logger.add(self.allocator, .{
+                            .start = self.tokens[pa.name].start,
+                            .end = self.tokens[pa.name].end,
+                            .file = self.tokens[pa.name].file,
+                            .kind = .{ .TypeError = TypeError.UnknownSliceProperty },
+                            .message = "unknown slice property, expected 'len' or 'ptr'",
+                        });
+                        break :blk error.UnknownSliceProperty;
+                    },
+                    else => {},
+                }
+
+                try self.logger.add(self.allocator, .{
+                    .start = node.start,
+                    .end = node.end,
+                    .file = node.file,
+                    .kind = .{ .TypeError = TypeError.NotAMember },
+                    .message = try self.allocator.print("type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
+                });
+                break :blk error.NotAMember;
             },
             .property_access => blk: {
                 const pa = &node.data.property_access;
@@ -642,6 +733,14 @@ pub const Checker = struct {
                             });
                             break :blk self.types.items[ptr_type_id].ty;
                         }
+                        try self.logger.add(self.allocator, .{
+                            .start = self.tokens[pa.name].start,
+                            .end = self.tokens[pa.name].end,
+                            .file = self.tokens[pa.name].file,
+                            .kind = .{ .TypeError = TypeError.UnknownSliceProperty },
+                            .message = "unknown slice property, expected 'len' or 'ptr'",
+                        });
+                        break :blk error.UnknownSliceProperty;
                     },
                     else => {},
                 }
@@ -651,9 +750,9 @@ pub const Checker = struct {
                     .end = node.end,
                     .file = node.file,
                     .kind = .{ .TypeError = TypeError.NotAMember },
-                    .message = try std.fmt.allocPrint(self.allocator, "type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
+                    .message = try self.allocator.print("type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
                 });
-                return error.UnexpectedType;
+                break :blk error.NotAMember;
             },
             .array_access => blk: {
                 const aa = &node.data.array_access;
@@ -732,7 +831,7 @@ pub const Checker = struct {
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
                         .message = "binary operations only accept floats, unsigned integers or integers", // for now
                     });
-                    return TypeError.UnexpectedType;
+                    return error.UnexpectedType;
                 }
 
                 try self.matchTypes(
@@ -765,7 +864,7 @@ pub const Checker = struct {
                             .message = "unary operator NOT only accepts bools",
                         },
                     });
-                    return TypeError.UnexpectedType;
+                    return error.UnexpectedType;
                 }
                 break :blk rhs;
             },
@@ -792,7 +891,7 @@ pub const Checker = struct {
                             .message = "this unary operator only accepts floats, unsigned integers or integers",
                         },
                     });
-                    return TypeError.UnexpectedType;
+                    return error.UnexpectedType;
                 }
                 break :blk rhs;
             },
@@ -811,7 +910,7 @@ pub const Checker = struct {
             .message = message,
             .note = note,
         });
-        return TypeError.IncompatibleTypes;
+        return error.IncompatibleTypes;
     }
 
     fn isTyEql(i_1: Type, i_2: Type) bool {

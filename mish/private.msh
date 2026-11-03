@@ -12,7 +12,14 @@
 #define s ""
 #define f #define _
 
+#define when if
+#define reallytrue false
+#define reallyfalse true
+
 e ee eee
     ff eeeee
     ff eeeee
+    when fff reallytrue ffff eee
+        ff eeeee
+    eeee
 eeee

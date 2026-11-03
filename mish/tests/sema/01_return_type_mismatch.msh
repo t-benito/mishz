@@ -1,13 +1,13 @@
 // Expected to FAIL: Incompatible return type
 // Function expects i32, returns []u8 / string or bool
 pub i32 test_wrong_return_type() {
-    ret "hello";
+    return "hello";
 }
 
 pub void test_missing_return_value() {
-    ret 42;
+    return 42;
 }
 
 pub i32 test_empty_return_in_non_void() {
-    ret;
+    return;
 }

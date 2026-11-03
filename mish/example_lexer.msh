@@ -1,7 +1,7 @@
-//#include <std/io.msh>
-//#include <std/mem.msh>
-//#include <std/list.msh>
-//#include <std/char.msh>
+#include <std/io.msh>
+#include <std/mem.msh>
+#include <std/list.msh>
+#include <std/char.msh>
 
 i32 main {
 

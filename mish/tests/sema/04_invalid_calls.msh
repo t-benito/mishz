@@ -1,6 +1,6 @@
 // Expected to FAIL: Calling with wrong parameter types or arity
 pub void takes_two(i32 a, bool b) {
-    ret;
+    return;
 }
 
 pub void test_invalid_call() {

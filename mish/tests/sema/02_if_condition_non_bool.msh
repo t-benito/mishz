@@ -2,6 +2,6 @@
 pub void test_if_condition_type() {
     i32 not_a_bool = 10;
     if (not_a_bool) {
-        ret;
+        return;
     }
 }

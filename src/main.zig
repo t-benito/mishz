@@ -5,7 +5,7 @@ const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
 const preprocess = @import("preprocess.zig");
 const parse = @import("parse.zig");
-//const sema = @import("sema.zig");
+const sema = @import("sema.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
 
@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
     defer res.deinit();
 
     if (res.args.help != 0 or res.positionals[0] == null) {
-        std.debug.print("Mish compiler v0.0.2p\n\nUsage:\n", .{});
+        std.debug.print("Mish compiler v0.0.2t\n\nUsage:\n", .{});
         return clap.helpToFile(io, .stderr(), clap.Help, &params, .{});
     }
 
@@ -156,17 +156,18 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     }
 
     /////////////////////////////////// sema
-    // var checker_progress = root_progress.start("Semantic Analysis", ast.len);
-    // var checker = sema.Checker.init(
-    //     arena,
-    //     ast,
-    //     tokens,
-    //     parser.types,
-    //     &file_table,
-    //     &checker_progress,
-    // );
-    // checker.run() catch std.process.exit(1);
-    // checker_progress.end();
+    var checker_progress = root_progress.start("Semantic Analysis", ast.len);
+    var checker = sema.Checker.init(
+        arena,
+        stdout,
+        ast,
+        tokens,
+        parser.types,
+        &file_table,
+        &checker_progress,
+    );
+    checker.run() catch std.process.exit(1);
+    checker_progress.end();
 }
 
 fn printZen(io: std.Io, allocator: std.mem.Allocator, stdout: std.Io.File) !void {
