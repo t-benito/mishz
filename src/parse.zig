@@ -738,6 +738,9 @@ pub const Parser = struct {
                     };
                 },
                 .open_body => {
+                    if (self.next().kind != .dot and self.next().kind != .close_body)
+                        break;
+
                     parent_node.setName("Struct initialization");
 
                     const start = self.advance();
@@ -1389,19 +1392,19 @@ pub const Parser = struct {
         const start = self.current;
         _ = try self.expect(.kw_if, &if_node);
 
-        _ = try self.expect(.open_paren, &if_node);
         const expr = try self.parseExpr(0, &if_node);
-        _ = try self.expect(.close_paren, &if_node);
 
         var body: *Node = undefined;
         if (self.matches(.open_body)) {
             const sstart = self.current;
             _ = try self.expect(.open_body, &if_node);
+            const block = try self.parseBlock(&if_node);
+            _ = try self.expect(.close_body, &if_node);
             body = try self.allocator.create(Node);
             body.* = .{
                 .data = .{
                     .block = .{
-                        .body = try self.parseBlock(&if_node),
+                        .body = block,
                     },
                 },
                 .tag = .block,
@@ -1409,8 +1412,8 @@ pub const Parser = struct {
                 .end = self.peek().end,
                 .file = self.tokens[sstart].file,
             };
-            _ = try self.expect(.close_body, &if_node);
         } else {
+            _ = try self.expect(.colon, &if_node);
             body = try self.parseStmt(&if_node);
         }
 
@@ -1476,8 +1479,8 @@ pub const Parser = struct {
         var incr: ?*Node = undefined;
 
         const node = try self.allocator.create(Node);
-        // special case for no parenthes at all
-        if (!self.matches(.open_paren)) {
+        // special case for nothing
+        if (self.matches(.open_body) or self.matches(.colon)) {
             var body: *Node = undefined;
             if (self.matches(.open_body)) {
                 const sstart = self.current;
@@ -1497,6 +1500,7 @@ pub const Parser = struct {
                 };
                 _ = try self.expect(.close_body, &parent_node);
             } else {
+                _ = try self.expect(.colon, &parent_node);
                 body = try self.parseStmt(&parent_node);
             }
             node.* = Node{
@@ -1515,7 +1519,6 @@ pub const Parser = struct {
             };
             return node;
         }
-        _ = try self.expect(.open_paren, &parent_node);
 
         parent_node.setEstimatedTotalItems(4);
 
@@ -1550,12 +1553,11 @@ pub const Parser = struct {
         }
         _ = try self.expect(.semicolon, &parent_node);
 
-        if (self.matches(.close_paren)) {
+        if (self.matches(.colon) or self.matches(.open_body)) {
             incr = null;
         } else {
             incr = try self.parseExpr(0, &parent_node);
         }
-        _ = try self.expect(.close_paren, &parent_node);
 
         var body: *Node = undefined;
         if (self.matches(.open_body)) {
@@ -1575,6 +1577,7 @@ pub const Parser = struct {
             };
             _ = try self.expect(.close_body, &parent_node);
         } else {
+            _ = try self.expect(.colon, &parent_node);
             body = try self.parseStmt(&parent_node);
         }
         node.* = Node{

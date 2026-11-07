@@ -17,6 +17,7 @@ pub const Token = struct {
         dot,
         comma,
         semicolon,
+        colon,
         arrow,
 
         assign,
@@ -297,7 +298,7 @@ pub const Lexer = struct {
             }
 
             if (std.ascii.isAlphabetic(self.peek()) or self.peek() == '_') {
-                while (!self.isAtEnd() and (std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_' or self.peek() == ':')) {
+                while (!self.isAtEnd() and (std.ascii.isAlphanumeric(self.peek()) or self.peek() == '_')) {
                     _ = self.advance();
                 }
                 const str = self.source[start..self.current];
@@ -376,7 +377,7 @@ pub const Lexer = struct {
                 continue;
             }
 
-            const emsg = try std.fmt.allocPrint(allocator, "unknown character '{c}'", .{bad});
+            const emsg = try allocator.print("unknown character '{c}'", .{bad});
 
             try self.logger.add(allocator, .{
                 .message = emsg,
@@ -412,6 +413,7 @@ pub const Lexer = struct {
             '.' => .dot,
             ',' => .comma,
             ';' => .semicolon,
+            ':' => .colon,
             '=' => .assign,
             '!' => .not,
             '>' => .gt,

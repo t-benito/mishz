@@ -1,0 +1,12 @@
+pub i32 main {
+  if !true:
+    p();
+  if !true { p(); }
+  for i32 i = 0; i < 42; i++:
+    p();
+  for i32 i = 0; i < 42; i++ { p(); }
+}
+
+pub void p {
+
+}
