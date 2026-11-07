@@ -1,0 +1,5 @@
+// Expected to FAIL: Pointer-style access on a non-pointer
+pub void test_wrong_access() {
+    i32 num = 5;
+    i32 bad = num->val;
+}

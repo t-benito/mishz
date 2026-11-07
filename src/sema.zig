@@ -177,7 +177,7 @@ pub const Checker = struct {
         }
 
         for (self.ast) |node| {
-            self.checkTop(node, self.root_node) catch {};
+            self.checkTop(node, self.root_node) catch continue;
         }
         if (try self.logger.dump(self.allocator, self.writer)) {
             return error.checker;
@@ -714,6 +714,16 @@ pub const Checker = struct {
             .property_access => blk: {
                 const pa = &node.data.property_access;
                 const target_ty = try self.checkExpr(pa.target);
+                if (target_ty == .ptr) {
+                    try self.logger.add(self.allocator, .{
+                        .start = pa.target.start,
+                        .end = pa.target.end,
+                        .file = pa.target.file,
+                        .kind = .{ .TypeError = TypeError.WrongTypeOfAccess },
+                        .message = "property access may not be used on pointers, use '->' instead",
+                    });
+                    return error.WrongTypeOfAccess;
+                }
                 const prop_name = self.file_table.spanStr(
                     self.tokens[pa.name].file,
                     self.tokens[pa.name].start,
@@ -725,7 +735,7 @@ pub const Checker = struct {
                         if (std.mem.eql(u8, prop_name, "len")) {
                             break :blk .u64;
                         } else if (std.mem.eql(u8, prop_name, "ptr")) { // TODO: maybe reuse the ptr type if .ptr was already got on this
-                            const ptr_type_id = self.types.items.len;
+                            const ptr_type_id = self.types.items.len; // but who cares about memory anyways?
                             try self.types.append(self.allocator, TypeNode{
                                 .ty = .{ .ptr = inner_id },
                                 .start = node.start,

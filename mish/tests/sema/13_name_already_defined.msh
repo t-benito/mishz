@@ -1,0 +1,5 @@
+// Expected to FAIL: Redefining a symbol in the same scope
+pub void test_redefinition() {
+    i32 x = 1;
+    i32 x = 2;
+}

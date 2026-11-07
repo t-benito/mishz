@@ -1,0 +1,7 @@
+// Expected to FAIL: Non-bool in for condition
+pub void test_for_condition() {
+    i32 n = 5;
+    for (; n;) {
+        return;
+    }
+}

@@ -1,0 +1,10 @@
+pub i32 main {
+  bool boolean = true;
+  if (boolean) {
+    boolean = false;
+  }
+  boolean = true;
+  for (;boolean;) {
+    boolean = !boolean;
+  }
+}

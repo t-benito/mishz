@@ -1,0 +1,10 @@
+// Expected to FAIL: Struct literal with wrong member type
+pub void test_struct_member_mismatch {
+    Box b = Box{
+        .value = "not an i32",
+    };
+}
+
+struct Box {
+    i32 value;
+}

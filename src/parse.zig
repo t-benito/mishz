@@ -741,7 +741,7 @@ pub const Parser = struct {
                     parent_node.setName("Struct initialization");
 
                     const start = self.advance();
-                    var fields = std.ArrayList(*Node).empty;
+                    var fields = try std.ArrayList(*Node).initCapacity(self.allocator, 10);
                     while (!self.isAtEnd() and !self.matches(.close_body)) {
                         parent_node.increaseEstimatedTotalItems(1);
 
@@ -751,7 +751,6 @@ pub const Parser = struct {
 
                         _ = try self.expect(.assign, &parent_node);
                         const v = try self.parseExpr(0, &parent_node);
-                        _ = try self.expect(.semicolon, &parent_node);
 
                         const n = try self.allocator.create(Node);
                         n.* = .{
@@ -767,6 +766,12 @@ pub const Parser = struct {
                             .file = v.file,
                         };
                         try fields.append(self.allocator, n);
+
+                        if (self.peek().kind == .comma) {
+                            _ = self.advance();
+                        } else {
+                            break;
+                        }
                     }
                     _ = try self.expect(.close_body, &parent_node);
 
@@ -1466,72 +1471,12 @@ pub const Parser = struct {
         const start = self.current;
         _ = try self.expect(.kw_for, &parent_node);
 
-        //_ = try self.expect(.open_paren, &parent_node);
         var vari: ?*Node = undefined;
         var cond: ?*Node = undefined;
         var incr: ?*Node = undefined;
 
         const node = try self.allocator.create(Node);
-        //errdefer self.allocator.free(node);
-        // special case for ()
-        if (self.matches(.open_paren) and self.next().kind == .close_paren) {
-            _ = try self.expect(.open_paren, &parent_node);
-            _ = try self.expect(.close_paren, &parent_node);
-            vari = null;
-            cond = null;
-            incr = null;
-
-            if (self.matches(.open_body)) {
-                const sstart = self.current;
-                _ = try self.expect(.open_body, &parent_node);
-                const body = try self.allocator.create(Node);
-                body.* = .{
-                    .data = .{
-                        .block = .{
-                            .body = try self.parseBlock(&parent_node),
-                        },
-                    },
-                    .tag = .block,
-                    .start = self.tokens[sstart].start,
-                    .end = self.peek().end,
-                    .file = body.file,
-                };
-                _ = try self.expect(.close_body, &parent_node);
-                node.* = Node{
-                    .data = .{
-                        .for_stmt = .{
-                            .vari = null,
-                            .cond = null,
-                            .incr = null,
-                            .body = body,
-                        },
-                    },
-                    .tag = .for_stmt,
-                    .start = start,
-                    .end = self.peek().end,
-                    .file = body.file,
-                };
-                return node;
-            } else {
-                const body = try self.parseStmt(&parent_node);
-                node.* = Node{
-                    .data = .{
-                        .for_stmt = .{
-                            .vari = null,
-                            .cond = null,
-                            .incr = null,
-                            .body = body,
-                        },
-                    },
-                    .tag = .for_stmt,
-                    .start = start,
-                    .end = self.peek().end,
-                    .file = body.file,
-                };
-                return node;
-            }
-        }
-        // another special case for no parenthes at all (does the exact same)
+        // special case for no parenthes at all
         if (!self.matches(.open_paren)) {
             var body: *Node = undefined;
             if (self.matches(.open_body)) {

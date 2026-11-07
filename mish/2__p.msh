@@ -1,0 +1,20 @@
+import <std/io.msh> as io use { println };
+
+typedef my_i32 = i32;
+
+pub my_i32 main {
+  println("Hello, world!");
+  
+  bool cond = true;
+
+  // all different ifs
+  if cond { println("wow") }
+  // if last was ), dont need a body
+  if cond2() println("wow");
+  // python????
+  if cond: println("wow");
+}
+
+pub bool cond2 {
+    return true;
+}
