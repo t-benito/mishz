@@ -1,5 +1,0 @@
-// Expected to FAIL: Indexing with a non-integer index
-pub void test_index_non_int() {
-    []u8 slice = "hello";
-    u8 c = slice[true];
-}

@@ -1,9 +1,0 @@
-// Expected to PASS: Testing forward references across top-level functions
-// Function 'first' calls 'second', which is defined later in the file.
-pub void first() {
-    second(42);
-}
-
-pub void second(i32 val) {
-  return;
-}

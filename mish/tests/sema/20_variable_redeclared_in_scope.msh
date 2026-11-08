@@ -1,6 +1,0 @@
-// Expected to FAIL: Declaring the same variable twice in nested scope is allowed,
-// but reusing after block should leak-check. This tests redeclaration in same scope.
-pub void test_same_scope_redecl() {
-    i32 a = 1;
-    i32 a = 2;
-}

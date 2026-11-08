@@ -13,23 +13,23 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
         switch (node.tag) {
             .integer, .string, .identifier => {
                 try printIndent(child_indent, writer);
-                try writer.print("token_index: {}\n", .{node.data.token});
+                try writer.print("token index: {}\n", .{node.data.token});
             },
             .builtin => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}\n", .{node.data.builtin.name});
+                try writer.print("name index: {}\n", .{node.data.builtin.name});
                 try printAst(node.data.builtin.args, child_indent, writer);
             },
             .cast => {
                 try printIndent(child_indent, writer);
-                try writer.print("type_id: {}\n", .{node.data.cast.ty});
+                try writer.print("type id: {}\n", .{node.data.cast.ty});
                 try printAst((&node.data.cast.expr)[0..1], child_indent, writer);
             },
             .pointer_access,
             .property_access,
             => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}\n", .{node.data.property_access.name});
+                try writer.print("name index: {}\n", .{node.data.property_access.name});
                 try printAst((&node.data.property_access.target)[0..1], child_indent, writer);
             },
             .false, .true, .null => {},
@@ -57,14 +57,14 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             },
             .var_stmt => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}, type_id: {}\n", .{ node.data.var_stmt.name, node.data.var_stmt.ty });
+                try writer.print("name index: {}, type id: {}\n", .{ node.data.var_stmt.name, node.data.var_stmt.ty });
                 if (node.data.var_stmt.val) |val| {
                     try printAst((&val)[0..1], child_indent, writer);
                 }
             },
             .fn_stmt => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}, returns_type_id: {}\n", .{ node.data.fn_stmt.name, node.data.fn_stmt.returns });
+                try writer.print("name index: {}, returns id: {}\n", .{ node.data.fn_stmt.name, node.data.fn_stmt.returns });
 
                 if (node.data.fn_stmt.params) |params| {
                     try printAst(params, child_indent, writer);
@@ -73,7 +73,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             },
             .param => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}, type_id: {}\n", .{ node.data.param.name, node.data.param.ty });
+                try writer.print("name index: {}, type id: {}\n", .{ node.data.param.name, node.data.param.ty });
             },
             .ret_stmt => {
                 if (node.data.ret_stmt.val) |val| {
@@ -98,7 +98,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             },
             .struct_stmt => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}\n", .{node.data.struct_stmt.name});
+                try writer.print("name index: {}\n", .{node.data.struct_stmt.name});
                 try printAst(node.data.struct_stmt.fields, child_indent, writer);
             },
             .struct_init => {
@@ -108,7 +108,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             },
             .field_init => {
                 try printIndent(child_indent, writer);
-                try writer.print("name_token_index: {}\n", .{node.data.field_init.name});
+                try writer.print("name index: {}\n", .{node.data.field_init.name});
                 try printAst((&node.data.field_init.val)[0..1], child_indent, writer);
             },
         }
@@ -118,6 +118,6 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
 fn printIndent(count: usize, writer: *std.Io.Writer) !void {
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        try writer.writeAll("  ");
+        try writer.writeAll("    ");
     }
 }

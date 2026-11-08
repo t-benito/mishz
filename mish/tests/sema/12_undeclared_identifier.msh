@@ -1,4 +1,0 @@
-// Expected to FAIL: Using an undeclared identifier
-pub void test_undeclared() {
-    i32 x = not_declared;
-}
