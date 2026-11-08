@@ -3,7 +3,6 @@ const std = @import("std");
 
 const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
-const preprocess = @import("preprocess.zig");
 const parse = @import("parse.zig");
 const sema = @import("sema.zig");
 const tknprint = @import("tknprint.zig");
@@ -113,24 +112,8 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
     /////////////////////////////////// lexer
     var lexer = lex.Lexer.init(0, &file_table);
     var lexer_progress = root_progress.start("Lexer", source.len / 12 + 3);
-    var tokens = lexer.run(arena, stdout, lexer_progress) catch std.process.exit(1);
+    const tokens = lexer.run(arena, stdout, lexer_progress) catch std.process.exit(1);
     lexer_progress.end();
-
-    //////////////////////////////////// preprocessor
-    var pre_progress = root_progress.start("Preprocessor", tokens.len / 22);
-
-    var preprocessor = try preprocess.Preprocessor.init(
-        arena,
-        tokens,
-        &pre_progress,
-        &file_table,
-        io,
-        stdout,
-    );
-    preprocessor.run() catch std.process.exit(1);
-    tokens = preprocessor.tokens;
-
-    pre_progress.end();
 
     if (args.tokens != 0) {
         try tknprint.print(tokens, &file_table, stdout);

@@ -15,14 +15,16 @@ const err = @import("error.zig");
 const Error = err.Error;
 const Note = err.Note;
 
-const FileTable = @import("file_table.zig").FileTable;
+const ft = @import("file_table.zig");
+const FileTable = ft.FileTable;
+const FileHandle = ft.FileHandle;
 
 const Symbol = struct {
     data: Symbol.Data,
     kind: Symbol.Kind,
     start: usize,
     end: usize,
-    file: u8,
+    file: FileHandle,
     public: bool = true,
 
     pub const Kind = enum {
@@ -909,7 +911,7 @@ pub const Checker = struct {
         };
     }
 
-    fn matchTypes(self: *Checker, lhs: Type, rhs: Type, start: usize, end: usize, file: u8, message: []const u8, note: ?Note) !void {
+    fn matchTypes(self: *Checker, lhs: Type, rhs: Type, start: usize, end: usize, file: FileHandle, message: []const u8, note: ?Note) !void {
         if (isTyEql(lhs, rhs))
             return;
         try self.logger.add(self.allocator, Error{

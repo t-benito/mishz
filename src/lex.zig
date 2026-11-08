@@ -2,16 +2,17 @@ const std = @import("std");
 
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
-const FileTable = @import("file_table.zig").FileTable;
+const ft = @import("file_table.zig");
+const FileTable = ft.FileTable;
+const FileHandle = ft.FileHandle;
 
 pub const Token = struct {
     start: usize,
     end: usize,
     kind: Kind,
-    file: u8,
+    file: FileHandle,
 
     pub const Kind = enum {
-        newline, // used in preprocessor
         eof,
 
         dot,
@@ -47,17 +48,6 @@ pub const Token = struct {
         close_bracket,
         at,
 
-        pre_define,
-        pre_undef,
-        //pre_macro,
-        //pre_endmacro,
-        pre_ifdef,
-        pre_ifndef,
-        pre_else,
-        pre_elif,
-        pre_endif,
-        pre_include,
-
         kw_void,
         kw_i8,
         kw_i16,
@@ -90,15 +80,6 @@ pub const Token = struct {
     };
 
     pub const Keywords = std.StaticStringMap(Token.Kind).initComptime(.{
-        .{ "#define", .pre_define },
-        .{ "#undef", .pre_undef },
-        .{ "#ifdef", .pre_ifdef },
-        .{ "#ifndef", .pre_ifndef },
-        .{ "#endif", .pre_endif },
-        .{ "#include", .pre_include },
-        .{ "#else", .pre_else },
-        .{ "#elif", .pre_elif },
-
         .{ "void", .kw_void },
         .{ "i8", .kw_i8 },
         .{ "i16", .kw_i16 },
@@ -134,7 +115,7 @@ pub const LexError = enum(u8) {
 };
 
 pub const Lexer = struct {
-    file_id: u8,
+    file_id: FileHandle,
     file_table: *FileTable,
 
     source: []const u8,
@@ -145,7 +126,7 @@ pub const Lexer = struct {
 
     logger: ErrorLogger,
 
-    pub fn init(file_id: u8, file_table: *FileTable) Lexer {
+    pub fn init(file_id: FileHandle, file_table: *FileTable) Lexer {
         return .{
             .file_id = file_id,
             .file_table = file_table,
@@ -199,17 +180,6 @@ pub const Lexer = struct {
             // this is to increase the count shown in the progress bar..
             run_progress.end();
             run_progress = progress.start("Running", 0);
-
-            if (self.peek() == '\n') {
-                _ = self.advance();
-                try tokens.append(allocator, .{
-                    .start = self.current,
-                    .end = self.current,
-                    .file = self.file_id,
-                    .kind = .newline,
-                });
-                continue;
-            }
 
             while (!self.isAtEnd() and std.ascii.isWhitespace(self.peek()))
                 _ = self.advance();
@@ -319,30 +289,6 @@ pub const Lexer = struct {
                 });
                 continue;
             }
-            if (self.peek() == '#') {
-                while (!self.isAtEnd() and std.ascii.isAlphanumeric(self.peek()) or self.peek() == '#') {
-                    _ = self.advance();
-                }
-
-                const str = self.source[start..self.current];
-                if (Token.Keywords.get(str)) |k| {
-                    try tokens.append(allocator, .{
-                        .start = start,
-                        .end = self.current,
-                        .file = self.file_id,
-                        .kind = k,
-                    });
-                    continue;
-                }
-                try self.logger.add(allocator, .{
-                    .message = try std.fmt.allocPrint(allocator, "unknown processor directive '{s}'", .{str}),
-                    .kind = .{ .LexError = LexError.UnknownDirective },
-                    .start = start,
-                    .end = self.current,
-                    .file = self.file_id,
-                });
-                continue;
-            }
 
             if (std.ascii.isDigit(self.peek())) { // TODO: floats
                 while (!self.isAtEnd() and std.ascii.isDigit(self.peek()) or self.peek() == '_') {
@@ -359,24 +305,6 @@ pub const Lexer = struct {
 
             const bad = self.source[start];
             _ = self.advance();
-
-            if (self.peek() == '#') {
-                try self.logger.add(allocator, .{
-                    .message = "unknown character '#'",
-                    .kind = .{ .LexError = LexError.UnknownCharacter },
-                    .start = start,
-                    .end = self.current,
-                    .file = self.file_id,
-                    .note = .{
-                        .start = start,
-                        .end = self.current,
-                        .file = self.file_id,
-                        .message = "mishz does not allow spaces between '#' and preprocessor directive",
-                    },
-                });
-                continue;
-            }
-
             const emsg = try allocator.print("unknown character '{c}'", .{bad});
 
             try self.logger.add(allocator, .{

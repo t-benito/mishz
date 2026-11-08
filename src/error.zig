@@ -1,30 +1,30 @@
 const std = @import("std");
 
-const FileTable = @import("file_table.zig").FileTable;
+const ft = @import("file_table.zig");
+const FileTable = ft.FileTable;
+const FileHandle = ft.FileHandle;
 
 const Lex_Error = @import("lex.zig").LexError;
 const Parse_Error = @import("parse.zig").ParseError;
 const Type_Error = @import("sema.zig").TypeError;
-const Pre_Error = @import("preprocess.zig").Preprocessor.PreprocessorError;
 
 pub const ErrorType = union(enum(u8)) {
     ParseError: Parse_Error = 1,
     LexError: Lex_Error = 2,
     TypeError: Type_Error = 3,
-    PreprocessorError: Pre_Error = 4,
 };
 
 pub const Note = struct {
     message: []const u8,
     start: usize,
     end: usize,
-    file: u8,
+    file: FileHandle,
 };
 
 pub const Error = struct {
     message: []const u8,
     kind: ErrorType,
-    file: u8,
+    file: FileHandle,
     start: usize,
     end: usize,
     note: ?Note = null,
@@ -55,7 +55,6 @@ pub const ErrorLogger = struct {
         const _1: u16 = @intCast(@backingInt(kind));
         const _2: u16 = @intCast(switch (kind) {
             .LexError => |e| @backingInt(e),
-            .PreprocessorError => |e| @backingInt(e),
             .ParseError => |e| @backingInt(e),
             .TypeError => |e| @backingInt(e),
         });

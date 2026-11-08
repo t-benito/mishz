@@ -9,7 +9,9 @@ const ErrorLogger = err.ErrorLogger;
 const Error = err.Error;
 const ErrorType = err.ErrorType;
 
-const FileTable = @import("file_table.zig").FileTable;
+const ft = @import("file_table.zig");
+const FileTable = ft.FileTable;
+const FileHandle = ft.FileHandle;
 
 pub const Tag = enum {
     integer,
@@ -192,7 +194,7 @@ pub const Node = struct {
     tag: Tag,
     start: usize,
     end: usize,
-    file: u8,
+    file: FileHandle,
 };
 
 pub const ParseError = enum(u8) {
