@@ -37,8 +37,8 @@ pub const Tag = enum {
     unary_op_at,
     unary_op_neg,
     unary_op_not,
-    unary_op_decr, // --
-    unary_op_incr, // ++
+    unary_op_decr,
+    unary_op_incr,
     assign,
     assign_add,
     assign_sub,
@@ -56,10 +56,9 @@ pub const Tag = enum {
     for_stmt,
     struct_stmt,
     pub_stmt,
-    //class_stmt,
     cast,
 };
-// No, i do not use DOD.
+
 pub const Data = union {
     token: usize,
     builtin: struct {
@@ -589,7 +588,7 @@ pub const Parser = struct {
                     .tag = .builtin,
                     .start = lhs_t.start,
                     .end = close_p.end,
-                    .file = close_p.file, // random choice
+                    .file = close_p.file,
                 };
             },
             .open_paren => {
@@ -597,17 +596,13 @@ pub const Parser = struct {
                 _ = try self.expect(.close_paren, &parent_node);
                 break :blk expr.*;
             },
-            .not, // unary op
+            .not,
             .sub,
-            //.increment,
-            //.decrement,
             => {
                 const expr = try self.parseExpr(0, &parent_node);
                 const tag: Tag = switch (lhs_t.kind) {
                     .not => .unary_op_not,
                     .sub => .unary_op_neg,
-                    //.increment => .unary_op_incr,
-                    //.decrement => .unary_op_decr,
                     else => unreachable,
                 };
                 break :blk Node{
@@ -986,7 +981,7 @@ pub const Parser = struct {
             .kw_u64 => .u64,
             .kw_void => .void,
             .kw_bool => .bool,
-            .arrow => { // function ->ret_type(args)
+            .arrow => {
                 var this_node = parent_node.start("Function type", 2);
                 defer this_node.end();
 
@@ -997,7 +992,7 @@ pub const Parser = struct {
                 }
 
                 const params_start = self.types.items.len;
-                // here also no forced parentheses
+
                 if (self.matches(.open_paren)) {
                     _ = try self.expect(.open_paren, &this_node);
                     while (!self.matches(.close_paren)) {
@@ -1119,7 +1114,6 @@ pub const Parser = struct {
                 .file = self.tokens[name].file,
             };
             return node;
-            // good enough
         } else if (self.peek().kind == .kw_mut and self.next().kind == .identifier) {
             parent_node.setName("Mut variable");
 
@@ -1191,7 +1185,7 @@ pub const Parser = struct {
         const idstart = self.peek();
         if (self.peek().kind == .identifier) {
             switch (self.next().kind) {
-                .open_paren => { // fn with params
+                .open_paren => {
                     if (mut) {
                         try self.logger.add(self.allocator, .{
                             .start = self.tokens[mut_t].start,
@@ -1246,7 +1240,7 @@ pub const Parser = struct {
                             try self.logger.add(self.allocator, .{
                                 .kind = .{ .ParseError = ParseError.ExpectedTypeExpression },
                                 .start = found_ty.start,
-                                .end = self.next().end, // cant get any better error highlighting...
+                                .end = self.next().end,
                                 .file = found_ty.file,
                                 .message = try self.allocator.print(
                                     "expected type of parameter, found '{s}' ({s})",
@@ -1291,7 +1285,7 @@ pub const Parser = struct {
                     };
                     return node;
                 },
-                .open_body => { // fn without params
+                .open_body => {
                     if (mut) {
                         try self.logger.add(self.allocator, .{
                             .start = self.tokens[mut_t].start,
@@ -1330,7 +1324,7 @@ pub const Parser = struct {
                     };
                     return node;
                 },
-                .assign => { // variable
+                .assign => {
                     parent_node.setName("Variable");
                     parent_node.increaseEstimatedTotalItems(1);
 
@@ -1370,7 +1364,7 @@ pub const Parser = struct {
         const start = self.current;
         _ = try self.expect(.kw_ret, &ret_node);
 
-        var val: ?*Node = undefined; // seg fault if i use null?
+        var val: ?*Node = undefined;
         if (!self.matches(.semicolon)) {
             val = try self.parseExpr(0, &ret_node);
         } else {

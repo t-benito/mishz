@@ -177,11 +177,9 @@ pub const Lexer = struct {
         var runs: usize = 0;
         while (!self.isAtEnd()) {
             runs += 1;
-            //const msg = try std.fmt.allocPrint(allocator, "Running (run {})", .{runs});
-            //defer allocator.free(msg);
 
             progress.setEstimatedTotalItems(@max(self.source.len / 7, runs + 1));
-            // this is to increase the count shown in the progress bar..
+            // this is to increase the count shown in the progress bar
             run_progress.end();
             run_progress = progress.start("Running", 0);
 
