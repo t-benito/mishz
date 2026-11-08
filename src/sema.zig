@@ -39,9 +39,6 @@ const Symbol = struct {
             params: []TypeID,
             returns: TypeID,
         },
-        //strct: struct {
-        //    ,
-        //},
         param: TypeID,
     };
 };
@@ -171,7 +168,7 @@ pub const Checker = struct {
     }
 
     pub fn run(self: *Checker) !void {
-        try self.buildCache(); // IMPORTANT
+        try self.buildCache();
 
         try self.scope_map.enter();
         for (self.ast) |node| {
@@ -239,7 +236,7 @@ pub const Checker = struct {
                                 .start = param.start,
                                 .end = param.end,
                                 .file = param.file,
-                                .public = true, // always, TODO mayne flse??ß)
+                                .public = true,
                                 .data = .{
                                     .param = param.data.param.ty,
                                 },
@@ -279,25 +276,6 @@ pub const Checker = struct {
 
                 try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
             },
-            //.struct_stmt => {
-            //    parent_node.setName("Precheck struct");
-            //
-            //   try self.scope_map.define(
-            //       self.file_table.spanStr(
-            //           node.file,
-            //           self.tokens[node.data.struct_stmt.name].start,
-            //           self.tokens[node.data.struct_stmt.name].end,
-            //       ),
-            //       Symbol{
-            //           .kind = .strct,
-            //           .start = node.start,
-            //           .end = node.end,
-            //           .public = public,
-            //            .data = .{},
-            //       },
-            //       &self.logger,
-            //   );
-            //},
             else => unreachable, // TODO
         }
     }
@@ -441,7 +419,7 @@ pub const Checker = struct {
                             .note = if (fn_start) |fn_stmt| Note{
                                 .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
                                 .end = self.types.items[fn_stmt.data.fn_stmt.returns].end,
-                                .file = val.file, // a tad of cheating
+                                .file = val.file,
                                 .message = "return type declared here",
                             } else null,
                         });
@@ -456,7 +434,7 @@ pub const Checker = struct {
                         .note = if (fn_start) |fn_stmt| Note{
                             .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
                             .end = self.types.items[fn_stmt.data.fn_stmt.returns].end,
-                            .file = stmt.file, // a tad of cheating
+                            .file = stmt.file,
                             .message = "return type declared here",
                         } else null,
                     });
@@ -548,7 +526,6 @@ pub const Checker = struct {
                         &self.logger,
                     );
 
-                    //_ = try self.checkExpr(vari);
                     if (!isNum(self.types.items[vari.data.var_stmt.ty].ty))
                         try self.logger.add(self.allocator, .{
                             .start = vari.start,
@@ -652,7 +629,7 @@ pub const Checker = struct {
                                         ),
                                     });
                                     return error.TypeMismatch;
-                                } // this nesting sucks
+                                }
                             }
                         }
                         break :blk self.types.items[sym.data.func.returns].ty;
@@ -748,7 +725,7 @@ pub const Checker = struct {
                         if (std.mem.eql(u8, prop_name, "len")) {
                             break :blk .u64;
                         } else if (std.mem.eql(u8, prop_name, "ptr")) { // TODO: maybe reuse the ptr type if .ptr was already got on this
-                            const ptr_type_id = self.types.items.len; // but who cares about memory anyways?
+                            const ptr_type_id = self.types.items.len;
                             try self.types.append(self.allocator, TypeNode{
                                 .ty = .{ .ptr = inner_id },
                                 .start = node.start,
@@ -818,12 +795,7 @@ pub const Checker = struct {
                     self.tokens[b.name].end,
                 );
                 _ = name_str;
-                // STUB:
-                // TODO
-                // TODO
-                // TODO
-                // TODO
-                // TODO
+                // STUB:TODO
                 break :blk .void;
             },
             .cast => {
@@ -846,13 +818,13 @@ pub const Checker = struct {
             => blk: {
                 const lhs = try self.checkExpr(node.data.binary_op.left);
                 const rhs = try self.checkExpr(node.data.binary_op.right);
-                if (!(isNum(lhs) and isNum(rhs))) {
+                if (!( (isNum(lhs) and isNum(rhs)) or (lhs == .bool and rhs == .bool))) {
                     try self.logger.add(self.allocator, Error{
                         .start = node.start,
                         .end = node.end,
                         .file = node.file,
                         .kind = .{ .TypeError = TypeError.UnexpectedType },
-                        .message = "binary operations only accept floats, unsigned integers or integers", // for now
+                        .message = "binary operations only booleans or integers",
                     });
                     return error.UnexpectedType;
                 }
