@@ -184,7 +184,7 @@ pub const Lexer = struct {
 
     pub fn run(self: *Lexer, allocator: std.mem.Allocator, writer: *std.Io.Writer, progress: std.Progress.Node) ![]Token {
         var inits = progress.start("Initializing", 0);
-        var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 3);
+        var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 2);
 
         var run_progress = progress.start("Running", 0);
 

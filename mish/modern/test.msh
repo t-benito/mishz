@@ -7,6 +7,8 @@ pub i32 main {
   for i32 i = 0; i < 42; i++ { p(); }
 }
 
-pub void p {
-
+pub bool p {
+  if !!!false: {
+    return !!!!!!!!true;
+  }
 }

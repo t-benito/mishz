@@ -32,7 +32,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try writer.print("name_token_index: {}\n", .{node.data.property_access.name});
                 try printAst((&node.data.property_access.target)[0..1], child_indent, writer);
             },
-            ._false, ._true, ._null => {},
+            .false, .true, .null => {},
             .array_access => {
                 try printAst((&node.data.array_access.target)[0..1], child_indent, writer);
                 try printAst((&node.data.array_access.value)[0..1], child_indent, writer);

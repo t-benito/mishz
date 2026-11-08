@@ -535,8 +535,8 @@ pub const Checker = struct {
                         &self.logger,
                     );
 
-                    const ty = try self.checkExpr(vari);
-                    if (!isNum(ty))
+                    //_ = try self.checkExpr(vari);
+                    if (!isNum(self.types.items[vari.data.var_stmt.ty].ty))
                         try self.logger.add(self.allocator, .{
                             .start = vari.start,
                             .end = vari.end,
@@ -544,7 +544,7 @@ pub const Checker = struct {
                             .kind = .{ .TypeError = TypeError.TypeMismatch },
                             .message = "expected number as for loop variable type",
                         });
-                    if (vari.data.var_stmt.val == null or try self.checkExpr(vari.data.var_stmt.val.?) == .nullt)
+                    if (vari.data.var_stmt.val == null or try self.checkExpr(vari.data.var_stmt.val.?) == .null)
                         try self.logger.add(self.allocator, .{
                             .start = vari.start,
                             .end = vari.end,
@@ -818,8 +818,8 @@ pub const Checker = struct {
                 _ = try self.checkExpr(c.expr);
                 return self.types.items[c.ty].ty;
             },
-            ._true, ._false => .bool,
-            ._null => .nullt,
+            .true, .false => .bool,
+            .null => .null,
             .binary_op_add,
             .binary_op_div,
             .binary_op_eq,
@@ -927,7 +927,7 @@ pub const Checker = struct {
         const tag = comptime std.meta.Tag(Type);
         const t1 = @as(tag, i_1);
         const t2 = @as(tag, i_2);
-        return t1 == t2 or (i_1 == .nullt or i_2 == .nullt);
+        return t1 == t2 or (i_1 == .null or i_2 == .null);
     }
 
     fn isInt(ty: Type) bool {

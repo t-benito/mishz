@@ -14,9 +14,9 @@ const FileTable = @import("file_table.zig").FileTable;
 pub const Tag = enum {
     integer,
     string,
-    _false,
-    _true,
-    _null,
+    false,
+    true,
+    null,
     identifier,
     builtin,
     property_access,
@@ -151,7 +151,7 @@ pub const Field = struct {
 
 pub const Type = union(enum) {
     void,
-    nullt,
+    null,
     i8,
     i16,
     i32,
@@ -385,6 +385,7 @@ pub const Parser = struct {
         defer parent_node.end();
 
         var body = try std.ArrayList(*Node).initCapacity(self.allocator, 24);
+
         while (!self.isAtEnd()) {
             if (self.peek().kind == .close_body) {
                 break;
@@ -529,9 +530,9 @@ pub const Parser = struct {
                     .token = lhs_i,
                 },
                 .tag = switch (lhs_t.kind) {
-                    .kw_false => ._false,
-                    .kw_true => ._true,
-                    .kw_null => ._null,
+                    .kw_false => .false,
+                    .kw_true => .true,
+                    .kw_null => .null,
                     else => unreachable,
                 },
                 .start = lhs_t.start,
