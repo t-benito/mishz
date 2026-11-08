@@ -27,6 +27,11 @@ pub fn getPath(self: *const FileTable, idx: FileHandle) []const u8 {
     return self.paths[idx];
 }
 
+pub fn fromPath(self: *const FileTable, path: []const u8) ?FileHandle {
+    const idx = std.mem.indexOf([]const u8, self.paths, &[_][]const u8{path}) orelse return null;
+    return @intCast(idx);
+}
+
 pub fn getSource(self: *const FileTable, idx: FileHandle) []const u8 {
     return self.sources[idx];
 }

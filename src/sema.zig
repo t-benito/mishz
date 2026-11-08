@@ -21,7 +21,7 @@ const FileHandle = ft.FileHandle;
 
 const Symbol = struct {
     data: Symbol.Data,
-    kind: Symbol.Kind,
+    kind: Kind,
     start: usize,
     end: usize,
     file: FileHandle,
@@ -187,12 +187,17 @@ pub const Checker = struct {
     }
 
     fn precheckTop(self: *Checker, node: *Node, previous: *const std.Progress.Node, public: bool) !void {
-        var parent_node = previous.start("Precheck top-level statement", 1);
+        var parent_node = previous.start("Precheck ...", 1);
         defer parent_node.end();
 
         switch (node.tag) {
             .fn_stmt => {
-                parent_node.setName("Precheck function");
+                const name = self.file_table.spanStr(
+                    node.file,
+                    self.tokens[node.data.fn_stmt.name].start,
+                    self.tokens[node.data.fn_stmt.name].end,
+                );
+                parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
                 var param_types: []TypeID = &.{};
                 if (node.data.fn_stmt.params) |params| {
@@ -204,11 +209,7 @@ pub const Checker = struct {
                 }
 
                 try self.scope_map.define(
-                    self.file_table.spanStr(
-                        node.file,
-                        self.tokens[node.data.fn_stmt.name].start,
-                        self.tokens[node.data.fn_stmt.name].end,
-                    ),
+                    name,
                     Symbol{
                         .kind = .func,
                         .start = node.start,
@@ -249,7 +250,12 @@ pub const Checker = struct {
                 }
             },
             .var_stmt => {
-                parent_node.setName("Precheck variable");
+                const name = self.file_table.spanStr(
+                    node.file,
+                    self.tokens[node.data.var_stmt.name].start,
+                    self.tokens[node.data.var_stmt.name].end,
+                );
+                parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
                 try self.scope_map.define(
                     self.file_table.spanStr(
@@ -347,12 +353,17 @@ pub const Checker = struct {
     }
 
     fn checkTop(self: *Checker, node: *Node, previous: *const std.Progress.Node) !void {
-        var parent_node = previous.start("Top-level statement", 1);
+        var parent_node = previous.start("Check...", 1);
         defer parent_node.end();
 
         switch (node.tag) {
             .fn_stmt => {
-                parent_node.setName("Function");
+                const name = self.file_table.spanStr(
+                    node.file,
+                    self.tokens[node.data.fn_stmt.name].start,
+                    self.tokens[node.data.fn_stmt.name].end,
+                );
+                parent_node.setName(name);
                 for (node.data.fn_stmt.body) |stmt| {
                     try self.checkStmt(
                         stmt,
@@ -364,7 +375,7 @@ pub const Checker = struct {
             },
             .var_stmt => try self.checkStmt(node, .void, null, &parent_node),
             .pub_stmt => {
-                parent_node.setName("Public top-level statement");
+                parent_node.setName("Public");
                 try self.checkTop(node.data.pub_stmt.stmt, &parent_node);
             },
             .struct_stmt => {}, // TODO: make

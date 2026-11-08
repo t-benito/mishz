@@ -72,6 +72,8 @@ pub const Token = struct {
         kw_pub,
         kw_struct,
         kw_as,
+        kw_import,
+        kw_use,
 
         identifier,
         string_literal,
@@ -104,6 +106,8 @@ pub const Token = struct {
         .{ "pub", .kw_pub },
         .{ "struct", .kw_struct },
         .{ "as", .kw_as },
+        .{ "import", .kw_import },
+        .{ "use", .kw_use },
     });
 };
 
@@ -316,8 +320,8 @@ pub const Lexer = struct {
             });
         }
         try tokens.append(allocator, .{
-            .start = 0,
-            .end = 0,
+            .start = self.source.len - 1,
+            .end = self.source.len - 1,
             .file = self.file_id,
             .kind = .eof,
         });

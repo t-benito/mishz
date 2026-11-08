@@ -1,4 +1,4 @@
-echo -e '\nstruct Thing { *->void(i32) fn; }' >./huge.msh
-for i in {1..20000}; do
-  echo -e "\npub i32 main$i {\nThing th = Thing{\n.fn=thingFn$i;\n};th.fn();\n} \n pub void thingFn$i(i32 i){\n return i*$i;\n }" >>./huge.msh
+echo -e 'struct Thing { *->void(i32) fn; }' >./huge.msh
+for i in {1..50000}; do
+  printf "pub i32 main%d { Thing th = Thing{ .fn=thingFn%d }; th.fn(); } pub void thingFn%d(i32 i){ return i * %d; }" $i $i $i $i >>./huge.msh
 done

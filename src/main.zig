@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
         .allocator = allocator,
     }) catch |err| {
         try diag.reportToFile(io, .stderr(), err);
-        return err;
+        std.process.exit(1);
     };
     defer res.deinit();
 
@@ -111,7 +111,7 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
 
     /////////////////////////////////// lexer
     var lexer = lex.Lexer.init(0, &file_table);
-    var lexer_progress = root_progress.start("Lexer", source.len / 12 + 3);
+    var lexer_progress = root_progress.start("Lexer", source.len / 9 + 3);
     const tokens = lexer.run(arena, stdout, lexer_progress) catch std.process.exit(1);
     lexer_progress.end();
 
@@ -155,31 +155,19 @@ fn compileFile(path: []const u8, init: std.process.Init, args: CLIArgs) !void {
 
 fn printZen(io: std.Io, allocator: std.mem.Allocator, stdout: std.Io.File) !void {
     const txt = try allocator.print(
-        \\{s}Zen of Mish{s}
+        \\* {s}Compilation speed over runtime speed{s}: The compiler should feel like an interpreter.
+        \\* {s}Explicit over implicit{s}: Code should say what it does, and do only what it says.
+        \\* {s}No hidden control flow{s}: No hidden constructors, destructors, or operator overloads.
+        \\* {s}Simplicity over cleverness{s}: todo (the old one was bad)
         \\
-        \\{s}1{s}{s}.{s} {s}Compilation speed over runtime speed{s}: The compiler should feel like an interpreter.
-        \\{s}2{s}{s}.{s} {s}Explicit over implicit{s}: Code should say what it does, and do only what it says.
-        \\{s}3{s}{s}.{s} {s}No hidden control flow{s}: No hidden constructors, destructors, or operator overloads.
-        \\{s}4{s}{s}.{s} {s}Simplicity over cleverness{s}: todo (the old one was bad)
-        \\
-    , .{ // lazyvim, not my fault.
-        // title
-        BLUE, RESET,
+    , .{
         // 1
-        BLUE, RESET,
-        DIM,  RESET,
         BOLD, RESET,
         // 2
-        BLUE, RESET,
-        DIM,  RESET,
         BOLD, RESET,
         // 3
-        BLUE, RESET,
-        DIM,  RESET,
         BOLD, RESET,
         // 4
-        BLUE, RESET,
-        DIM,  RESET,
         BOLD, RESET,
     });
     try stdout.writeStreamingAll(io, txt);

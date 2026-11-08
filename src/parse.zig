@@ -141,6 +141,10 @@ pub const Data = union {
         expr: *Node,
         ty: TypeID,
     },
+    import_stmt: struct {
+        file: FileHandle,
+        alias: usize,
+    },
 };
 
 pub const TypeID = usize;
