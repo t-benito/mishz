@@ -25,7 +25,6 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try writer.print("type id: {}\n", .{node.data.cast.ty});
                 try printAst((&node.data.cast.expr)[0..1], child_indent, writer);
             },
-            .pointer_access,
             .property_access,
             => {
                 try printIndent(child_indent, writer);
@@ -37,14 +36,40 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try printAst((&node.data.array_access.target)[0..1], child_indent, writer);
                 try printAst((&node.data.array_access.value)[0..1], child_indent, writer);
             },
-            .binary_op_add, .binary_op_sub, .binary_op_mul, .binary_op_div, .binary_op_eq, .binary_op_not_eq, .binary_op_gt, .binary_op_lt, .binary_op_lt_eq, .binary_op_gt_eq => {
+            .binary_op_add,
+            .binary_op_sub,
+            .binary_op_mul,
+            .binary_op_div,
+            .binary_op_eq,
+            .binary_op_not_eq,
+            .binary_op_gt,
+            .binary_op_lt,
+            .binary_op_lt_eq,
+            .binary_op_gt_eq,
+            .binary_op_bit_and,
+            .binary_op_bit_left,
+            .binary_op_bit_not,
+            .binary_op_bit_or,
+            .binary_op_bit_right,
+            .binary_op_bit_xor,
+            => {
                 try printAst((&node.data.binary_op.left)[0..1], child_indent, writer);
                 try printAst((&node.data.binary_op.right)[0..1], child_indent, writer);
             },
-            .unary_op_at, .unary_op_neg, .unary_op_not, .unary_op_decr, .unary_op_incr => {
+            .unary_op_at,
+            .unary_op_neg,
+            .unary_op_not,
+            .unary_op_decr,
+            .unary_op_incr,
+            => {
                 try printAst((&node.data.unary_op.right)[0..1], child_indent, writer);
             },
-            .assign, .assign_add, .assign_sub, .assign_mul, .assign_div => {
+            .assign,
+            .assign_add,
+            .assign_sub,
+            .assign_mul,
+            .assign_div,
+            => {
                 try printAst((&node.data.assignment.target)[0..1], child_indent, writer);
                 try printAst((&node.data.assignment.right)[0..1], child_indent, writer);
             },

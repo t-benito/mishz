@@ -6,10 +6,11 @@ const Data = parse.Data;
 const Tag = parse.Tag;
 const Type = parse.Type;
 const TypeNode = parse.TypeNode;
-const TypeID = parse.TypeID;
+const TypeHandle = parse.TypeHandle;
 
 const lex = @import("lex.zig");
 const Token = lex.Token;
+const TokenHandle = lex.TokenHandle;
 
 const err = @import("error.zig");
 const Error = err.Error;
@@ -34,12 +35,12 @@ const Symbol = struct {
         param,
     };
     pub const Data = union {
-        vari: TypeID,
+        vari: TypeHandle,
         func: struct {
-            params: []TypeID,
-            returns: TypeID,
+            params: []TypeHandle,
+            returns: TypeHandle,
         },
-        param: TypeID,
+        param: TypeHandle,
     };
 };
 
@@ -122,9 +123,8 @@ pub const TypeError = enum(u8) {
     NameAlreadyDefined = 10,
     ExpectedStatement = 11,
     MismatchedVariableType = 12,
-    WrongTypeOfAccess = 13,
-    UnknownSliceProperty = 14,
-    MustBeInit = 15,
+    UnknownSliceProperty = 13,
+    MustBeInit = 14,
 };
 
 pub const Checker = struct {
@@ -140,7 +140,7 @@ pub const Checker = struct {
     root_node: *const std.Progress.Node,
     logger: err.ErrorLogger,
 
-    string_ty_id: TypeID,
+    string_ty_id: TypeHandle,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -196,9 +196,9 @@ pub const Checker = struct {
                 );
                 parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
-                var param_types: []TypeID = &.{};
+                var param_types: []TypeHandle = &.{};
                 if (node.data.fn_stmt.params) |params| {
-                    var p_types = try std.ArrayList(TypeID).initCapacity(self.allocator, params.len);
+                    var p_types = try std.ArrayList(TypeHandle).initCapacity(self.allocator, params.len);
                     for (params) |param| {
                         try p_types.append(self.allocator, param.data.param.ty);
                     }
@@ -283,7 +283,7 @@ pub const Checker = struct {
     fn buildCache(self: *Checker) !void {
         var parent_node = self.root_node.start("Building cache", 0);
         defer parent_node.end();
-        var u8_type_id: ?TypeID = null;
+        var u8_type_id: ?TypeHandle = null;
         for (self.types.items, 0..) |t, idx| {
             switch (t.ty) {
                 .u8 => {
@@ -648,72 +648,10 @@ pub const Checker = struct {
                 });
                 return error.UnexpectedType;
             },
-            .pointer_access => blk: {
-                const pa = &node.data.property_access;
-                const target_ty = try self.checkExpr(pa.target);
-                if (target_ty != .ptr) {
-                    try self.logger.add(self.allocator, .{
-                        .start = pa.target.start,
-                        .end = pa.target.end,
-                        .file = pa.target.file,
-                        .kind = .{ .TypeError = TypeError.WrongTypeOfAccess },
-                        .message = "pointer access '->' must only be used on pointers, use '.' instead",
-                    });
-                    break :blk error.WrongTypeOfAccess;
-                }
-                const prop_name = self.file_table.spanStr(
-                    self.tokens[pa.name].file,
-                    self.tokens[pa.name].start,
-                    self.tokens[pa.name].end,
-                );
-
-                switch (self.types.items[target_ty.ptr].ty) {
-                    .slice => |inner_id| {
-                        if (std.mem.eql(u8, prop_name, "len")) {
-                            break :blk .u64;
-                        } else if (std.mem.eql(u8, prop_name, "ptr")) {
-                            const ptr_type_id = self.types.items.len;
-                            try self.types.append(self.allocator, .{
-                                .ty = .{ .ptr = inner_id },
-                                .start = node.start,
-                                .end = node.end,
-                            });
-                            break :blk self.types.items[ptr_type_id].ty;
-                        }
-                        try self.logger.add(self.allocator, .{
-                            .start = self.tokens[pa.name].start,
-                            .end = self.tokens[pa.name].end,
-                            .file = self.tokens[pa.name].file,
-                            .kind = .{ .TypeError = TypeError.UnknownSliceProperty },
-                            .message = "unknown slice property, expected 'len' or 'ptr'",
-                        });
-                        break :blk error.UnknownSliceProperty;
-                    },
-                    else => {},
-                }
-
-                try self.logger.add(self.allocator, .{
-                    .start = node.start,
-                    .end = node.end,
-                    .file = node.file,
-                    .kind = .{ .TypeError = TypeError.NotAMember },
-                    .message = try self.allocator.print("type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
-                });
-                break :blk error.NotAMember;
-            },
             .property_access => blk: {
                 const pa = &node.data.property_access;
                 const target_ty = try self.checkExpr(pa.target);
-                if (target_ty == .ptr) {
-                    try self.logger.add(self.allocator, .{
-                        .start = pa.target.start,
-                        .end = pa.target.end,
-                        .file = pa.target.file,
-                        .kind = .{ .TypeError = TypeError.WrongTypeOfAccess },
-                        .message = "property access may not be used on pointers, use '->' instead",
-                    });
-                    return error.WrongTypeOfAccess;
-                }
+
                 const prop_name = self.file_table.spanStr(
                     self.tokens[pa.name].file,
                     self.tokens[pa.name].start,
@@ -818,7 +756,7 @@ pub const Checker = struct {
             => blk: {
                 const lhs = try self.checkExpr(node.data.binary_op.left);
                 const rhs = try self.checkExpr(node.data.binary_op.right);
-                if (!( (isNum(lhs) and isNum(rhs)) or (lhs == .bool and rhs == .bool))) {
+                if (!((isNum(lhs) and isNum(rhs)) or (lhs == .bool and rhs == .bool))) {
                     try self.logger.add(self.allocator, Error{
                         .start = node.start,
                         .end = node.end,

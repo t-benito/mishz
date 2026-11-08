@@ -2,6 +2,7 @@ const std = @import("std");
 
 const lex = @import("lex.zig");
 const Token = lex.Token;
+pub const TokenHandle = lex.TokenHandle;
 
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
@@ -22,7 +23,6 @@ pub const Tag = enum {
     identifier,
     builtin,
     property_access,
-    pointer_access,
     array_access,
     binary_op_add,
     binary_op_sub,
@@ -34,6 +34,12 @@ pub const Tag = enum {
     binary_op_lt,
     binary_op_lt_eq,
     binary_op_gt_eq,
+    binary_op_bit_and,
+    binary_op_bit_or,
+    binary_op_bit_xor,
+    binary_op_bit_not,
+    binary_op_bit_left,
+    binary_op_bit_right,
     unary_op_at,
     unary_op_neg,
     unary_op_not,
@@ -60,14 +66,14 @@ pub const Tag = enum {
 };
 
 pub const Data = union {
-    token: usize,
+    token: TokenHandle,
     builtin: struct {
-        name: usize,
+        name: TokenHandle,
         args: []*Node,
     },
     property_access: struct {
         target: *Node,
-        name: usize,
+        name: TokenHandle,
     },
     array_access: struct {
         target: *Node,
@@ -93,27 +99,27 @@ pub const Data = union {
         fields: []*Node,
     },
     field_init: struct {
-        name: usize,
+        name: TokenHandle,
         val: *Node,
     },
     block: struct {
         body: []*Node,
     },
     var_stmt: struct {
-        ty: TypeID,
+        ty: TypeHandle,
         mut: bool,
-        name: usize,
+        name: TokenHandle,
         val: ?*Node,
     },
     fn_stmt: struct {
-        name: usize,
+        name: TokenHandle,
         params: ?[]*Node,
         body: []*Node,
-        returns: TypeID,
+        returns: TypeHandle,
     },
     param: struct {
-        name: usize,
-        ty: TypeID,
+        name: TokenHandle,
+        ty: TypeHandle,
     },
     ret_stmt: struct {
         val: ?*Node,
@@ -130,7 +136,7 @@ pub const Data = union {
         body: *Node,
     },
     struct_stmt: struct {
-        name: usize,
+        name: TokenHandle,
         fields: []*Node,
     },
     pub_stmt: struct {
@@ -138,19 +144,19 @@ pub const Data = union {
     },
     cast: struct {
         expr: *Node,
-        ty: TypeID,
+        ty: TypeHandle,
     },
     import_stmt: struct {
         file: FileHandle,
-        alias: usize,
+        alias: TokenHandle,
     },
 };
 
-pub const TypeID = usize;
+pub const TypeHandle = usize;
 
 pub const Field = struct {
     name: []const u8,
-    ty: TypeID,
+    ty: TypeHandle,
     mut: bool,
 };
 
@@ -169,21 +175,21 @@ pub const Type = union(enum) {
     f64,
     bool,
     func: struct {
-        returns: TypeID,
+        returns: TypeHandle,
         params_start: usize,
         params_end: usize,
     },
-    ptr: TypeID,
+    ptr: TypeHandle,
     array: struct {
-        ty: TypeID,
+        ty: TypeHandle,
         len: *Node,
     },
-    slice: TypeID,
+    slice: TypeHandle,
     strct: struct {
         name: []const u8,
         fields: []Field,
     },
-    named: usize,
+    named: TokenHandle,
 };
 
 pub const TypeNode = struct {
@@ -215,7 +221,7 @@ pub const ParseError = enum(u8) {
 pub const Parser = struct {
     file_table: *FileTable,
     tokens: []Token,
-    current: usize = 0,
+    current: TokenHandle = 0,
 
     allocator: std.mem.Allocator,
 
@@ -330,7 +336,7 @@ pub const Parser = struct {
             .kw_f32 => "f32",
             .kw_f64 => "f64",
             .kw_mut => "mut",
-            .kw_ret => "return",
+            .kw_ret => "ret",
             .kw_if => "if",
             .kw_for => "for",
             .kw_pub => "pub",
@@ -481,31 +487,39 @@ pub const Parser = struct {
             .sub_assign,
             .mul_assign,
             .div_assign,
-            => return 1,
+            => 1,
+            .bit_or,
+            .bit_xor,
+            .bit_and,
+            => 2,
+            .kw_as,
+            => 3,
             .equal,
             .not_equal,
             .gt,
             .lt,
             .gt_eq,
             .lt_eq,
-            => return 4,
+            => 4,
+            .bit_left,
+            .bit_right,
+            => 5,
             .add,
             .sub,
-            => return 5,
+            => 6,
             .star,
             .div,
-            => return 6,
+            => 7,
             .dot,
-            .arrow,
             .open_paren,
             .open_bracket,
             .open_body,
-            => return 7,
+            => 8,
             .increment,
             .decrement,
-            => return 8,
-            .kw_as => return 3,
-            else => return 0,
+            .bit_not,
+            => 9,
+            else => 0,
         };
     }
 
@@ -662,27 +676,6 @@ pub const Parser = struct {
                     } else {
                         return error.ExpectedTypeExpression;
                     }
-                },
-                .arrow => {
-                    parent_node.setName("Pointer access");
-
-                    _ = self.advance();
-                    const target = try self.expect(.identifier, &parent_node);
-
-                    const old = lhs;
-                    lhs = try self.allocator.create(Node);
-                    lhs.* = Node{
-                        .data = .{
-                            .property_access = .{
-                                .target = old,
-                                .name = self.current - 1,
-                            },
-                        },
-                        .tag = .pointer_access,
-                        .start = old.start,
-                        .end = target.end,
-                        .file = old.file,
-                    };
                 },
                 .dot => {
                     parent_node.setName("Property access");
@@ -894,6 +887,12 @@ pub const Parser = struct {
                         .lt => .binary_op_lt,
                         .gt_eq => .binary_op_gt_eq,
                         .lt_eq => .binary_op_lt_eq,
+                        .bit_and => .binary_op_bit_and,
+                        .bit_or => .binary_op_bit_or,
+                        .bit_xor => .binary_op_bit_xor,
+                        .bit_not => .binary_op_bit_not,
+                        .bit_left => .binary_op_bit_left,
+                        .bit_right => .binary_op_bit_right,
                         else => unreachable,
                     };
 
@@ -925,7 +924,7 @@ pub const Parser = struct {
         slice,
     };
 
-    fn tryParseType(self: *Parser, previous: *const std.Progress.Node) anyerror!?TypeID {
+    fn tryParseType(self: *Parser, previous: *const std.Progress.Node) anyerror!?TypeHandle {
         var parent_node = previous.start("Trying to parse type", 1);
         defer parent_node.end();
 
@@ -1689,7 +1688,7 @@ pub const Parser = struct {
                 },
                 .tag = .pub_stmt,
                 .start = self.tokens[start].start,
-                .end = self.peek().end,
+                .end = mem.end,
                 .file = self.tokens[start].file,
             };
             return node;

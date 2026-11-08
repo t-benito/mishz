@@ -6,6 +6,8 @@ const ft = @import("file_table.zig");
 const FileTable = ft.FileTable;
 const FileHandle = ft.FileHandle;
 
+pub const TokenHandle = u32;
+
 pub const Token = struct {
     start: usize,
     end: usize,
@@ -39,6 +41,12 @@ pub const Token = struct {
         mul_assign,
         div,
         div_assign,
+        bit_and,
+        bit_or,
+        bit_xor,
+        bit_not,
+        bit_left,
+        bit_right,
 
         open_paren,
         close_paren,
@@ -72,6 +80,8 @@ pub const Token = struct {
         kw_pub,
         kw_struct,
         kw_as,
+        kw_and,
+        kw_or,
         kw_import,
         kw_use,
 
@@ -99,13 +109,15 @@ pub const Token = struct {
         .{ "null", .kw_null },
 
         .{ "mut", .kw_mut },
-        .{ "return", .kw_ret },
+        .{ "ret", .kw_ret },
         .{ "if", .kw_if },
         .{ "else", .kw_else },
         .{ "for", .kw_for },
         .{ "pub", .kw_pub },
         .{ "struct", .kw_struct },
         .{ "as", .kw_as },
+        .{ "and", .kw_and },
+        .{ "or", .kw_or },
         .{ "import", .kw_import },
         .{ "use", .kw_use },
     });
@@ -252,7 +264,7 @@ pub const Lexer = struct {
                 }
                 if (!got) {
                     try self.logger.add(allocator, .{
-                        .kind = .{ .LexError = LexError.UnclosedStringLiteral },
+                        .kind = .{ .LexError = .UnclosedStringLiteral },
                         .message = "unclosed string literal (missing closing '\"')",
                         .start = start,
                         .end = self.current,
@@ -352,6 +364,10 @@ pub const Lexer = struct {
             '-' => .sub,
             '*' => .star,
             '/' => .div,
+            '&' => .bit_and,
+            '|' => .bit_or,
+            '^' => .bit_xor,
+            '~' => .bit_not,
             '(' => .open_paren,
             ')' => .close_paren,
             '{' => .open_body,
@@ -366,17 +382,19 @@ pub const Lexer = struct {
     fn parseDouble(self: *Lexer) ?Token.Kind {
         const str = pack2(self.peek(), self.next());
         return switch (str) {
-            pack2('-', '>') => .arrow,
-            pack2('-', '-') => .decrement,
-            pack2('+', '+') => .increment,
-            pack2('=', '=') => .equal,
-            pack2('!', '=') => .not_equal,
-            pack2('<', '=') => .lt_eq,
-            pack2('>', '=') => .gt_eq,
-            pack2('+', '=') => .add_assign,
-            pack2('-', '=') => .sub_assign,
-            pack2('*', '=') => .mul_assign,
-            pack2('/', '=') => .div_assign,
+            comptime pack2('-', '>') => .arrow,
+            comptime pack2('-', '-') => .decrement,
+            comptime pack2('+', '+') => .increment,
+            comptime pack2('=', '=') => .equal,
+            comptime pack2('!', '=') => .not_equal,
+            comptime pack2('<', '=') => .lt_eq,
+            comptime pack2('>', '=') => .gt_eq,
+            comptime pack2('+', '=') => .add_assign,
+            comptime pack2('-', '=') => .sub_assign,
+            comptime pack2('*', '=') => .mul_assign,
+            comptime pack2('/', '=') => .div_assign,
+            comptime pack2('<', '<') => .bit_left,
+            comptime pack2('>', '>') => .bit_right,
             else => null,
         };
     }
