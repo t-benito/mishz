@@ -72,6 +72,8 @@ pub const Token = struct {
         kw_true,
         kw_null,
 
+        kw_fn,
+        kw_let,
         kw_mut,
         kw_ret,
         kw_if,
@@ -108,6 +110,8 @@ pub const Token = struct {
         .{ "false", .kw_false },
         .{ "null", .kw_null },
 
+        .{ "fn", .kw_fn },
+        .{ "let", .kw_let },
         .{ "mut", .kw_mut },
         .{ "ret", .kw_ret },
         .{ "if", .kw_if },

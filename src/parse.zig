@@ -54,7 +54,7 @@ pub const Tag = enum {
     struct_init,
     field_init,
     block,
-    var_stmt,
+    let_stmt,
     fn_stmt,
     param,
     ret_stmt,
@@ -105,15 +105,19 @@ pub const Data = union {
     block: struct {
         body: []*Node,
     },
-    var_stmt: struct {
-        ty: TypeHandle,
+    let_stmt: struct {
+        ty: ?TypeHandle,
         mut: bool,
         name: TokenHandle,
         val: ?*Node,
     },
     fn_stmt: struct {
         name: TokenHandle,
-        params: ?[]*Node,
+        params: []*Node,
+        gens: struct {
+            start: TypeHandle,
+            end: TypeHandle,
+        },
         body: []*Node,
         returns: TypeHandle,
     },
@@ -216,6 +220,7 @@ pub const ParseError = enum(u8) {
     UnexpectedKwInStruct = 6,
     UnexpectedDefaultValue = 7,
     MutFunction = 8,
+    UnexpectedTypeToken = 9,
 };
 
 pub const Parser = struct {
@@ -286,10 +291,10 @@ pub const Parser = struct {
             .start = t.start,
             .end = t.end,
             .file = t.file,
-            .kind = .{ .ParseError = ParseError.UnexpectedToken },
+            .kind = .{ .ParseError = .UnexpectedToken },
         });
         self.current += 1;
-        const newname = try std.fmt.allocPrint(self.allocator, "\x1b[31m{s}\x1b[0m", .{node.getName()});
+        const newname = try self.allocator.print("\x1b[31m{s}\x1b[0m", .{node.getName()});
         node.setName(newname);
 
         return error.UnexpectedToken;
@@ -335,9 +340,13 @@ pub const Parser = struct {
             .kw_u64 => "u64",
             .kw_f32 => "f32",
             .kw_f64 => "f64",
+            .kw_fn => "fn",
+            .kw_let => "let",
             .kw_mut => "mut",
             .kw_ret => "ret",
             .kw_if => "if",
+            .kw_and => "and",
+            .kw_or => "or",
             .kw_for => "for",
             .kw_pub => "pub",
             .kw_struct => "struct",
@@ -355,18 +364,12 @@ pub const Parser = struct {
     }
 
     fn syncErr(self: *Parser) void {
-        if (!self.isAtEnd()) _ = self.advance();
+        if (!self.isAtEnd())
+            _ = self.advance();
         while (!self.isAtEnd()) {
             switch (self.peek().kind) {
-                .semicolon => {
-                    _ = self.advance();
-                    return;
-                },
-                .close_body,
-                .kw_ret,
+                .kw_fn,
                 .kw_struct,
-                .kw_if,
-                .kw_for,
                 .kw_pub,
                 => return,
                 else => _ = self.advance(),
@@ -375,7 +378,7 @@ pub const Parser = struct {
     }
 
     pub fn run(self: *Parser) ![]*Node {
-        var nodes = try std.ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 4);
+        var nodes = try std.ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 12);
         while (!self.isAtEnd()) {
             const top = self.parseTop() catch {
                 self.syncErr();
@@ -392,8 +395,8 @@ pub const Parser = struct {
     }
 
     fn parseBlock(self: *Parser, previous: *std.Progress.Node) ![]*Node {
-        var parent_node = previous.start("Body", 0);
-        defer parent_node.end();
+        //var parent_node = previous.start("Body", 0);
+        //defer parent_node.end();
 
         var body = try std.ArrayList(*Node).initCapacity(self.allocator, 24);
 
@@ -401,41 +404,40 @@ pub const Parser = struct {
             if (self.peek().kind == .close_body) {
                 break;
             }
-            parent_node.increaseEstimatedTotalItems(1);
-            try body.append(self.allocator, try self.parseStmt(&parent_node));
+            previous.increaseEstimatedTotalItems(1);
+            try body.append(self.allocator, try self.parseStmt(previous)); //&parent_node));
         }
         return body.toOwnedSlice(self.allocator);
     }
 
     fn parseTop(self: *Parser) anyerror!*Node {
-        const msg = try std.fmt.allocPrint(self.allocator, "Top-level statement (token {})", .{self.current});
+        const msg = try self.allocator.print("Top-level statement (token {})", .{self.current});
         const top_node = self.root_node.start(msg, 1);
         defer top_node.end();
 
         switch (self.peek().kind) {
-            .kw_struct => return try self.parseStruct(&top_node),
+            //.kw_struct => return try self.parseStruct(&top_node),
             .kw_pub => return try self.parsePub(&top_node),
+            .kw_let => return try self.parseLet(&top_node),
+            .kw_fn => return try self.parseFn(&top_node),
             else => {
-                if (try self.tryParseVarOrFn(&top_node)) |res| {
-                    return res;
-                }
+                const found_top = self.peek();
+                try self.logger.add(self.allocator, .{
+                    .kind = .{ .ParseError = ParseError.ExpectedTopLevelStatement },
+                    .start = found_top.start,
+                    .end = self.next().end,
+                    .file = found_top.file,
+                    .message = try self.allocator.print(
+                        "expected a top-level statement ('fn', 'let', 'struct' or 'pub'), found '{s}' ({s})",
+                        .{
+                            self.file_table.spanStr(found_top.file, found_top.start, found_top.end),
+                            @tagName(found_top.kind),
+                        },
+                    ),
+                });
+                return error.ExpectedTopLevelStatement;
             },
         }
-        const found_top = self.peek();
-        try self.logger.add(self.allocator, .{
-            .kind = .{ .ParseError = ParseError.ExpectedTopLevelStatement },
-            .start = found_top.start,
-            .end = self.next().end,
-            .file = found_top.file,
-            .message = try self.allocator.print(
-                "expected a top-level statement (function, class or global variable), found '{s}' ({s})",
-                .{
-                    self.file_table.spanStr(found_top.file, found_top.start, found_top.end),
-                    @tagName(found_top.kind),
-                },
-            ),
-        });
-        return error.ExpectedTopLevelStatement;
     }
 
     fn parseStmt(self: *Parser, previous: *std.Progress.Node) anyerror!*Node {
@@ -444,6 +446,11 @@ pub const Parser = struct {
         switch (self.peek().kind) {
             .kw_ret => {
                 const stmt = try self.parseRet(&parent_node);
+                _ = try self.expect(.semicolon, &parent_node);
+                return stmt;
+            },
+            .kw_let => {
+                const stmt = try self.parseLet(&parent_node);
                 _ = try self.expect(.semicolon, &parent_node);
                 return stmt;
             },
@@ -469,10 +476,6 @@ pub const Parser = struct {
                 return node;
             },
             else => {
-                if (try self.tryParseVar(&parent_node)) |vari| {
-                    _ = try self.expect(.semicolon, &parent_node);
-                    return vari;
-                }
                 const expr = try self.parseExpr(0, &parent_node);
                 _ = try self.expect(.semicolon, &parent_node);
                 return expr;
@@ -657,25 +660,21 @@ pub const Parser = struct {
             switch (nextt.kind) {
                 .kw_as => {
                     _ = self.advance();
-                    const ty = try self.tryParseType(&parent_node);
-                    if (ty) |ty_id| {
-                        const old = lhs;
-                        lhs = try self.allocator.create(Node);
-                        lhs.* = Node{
-                            .data = .{
-                                .cast = .{
-                                    .expr = old,
-                                    .ty = ty_id,
-                                },
+                    const ty = try self.parseType(&parent_node);
+                    const old = lhs;
+                    lhs = try self.allocator.create(Node);
+                    lhs.* = Node{
+                        .start = old.start,
+                        .end = self.types.items[ty].end,
+                        .file = old.file,
+                        .tag = .cast,
+                        .data = .{
+                            .cast = .{
+                                .expr = old,
+                                .ty = ty,
                             },
-                            .tag = .cast,
-                            .start = old.start,
-                            .end = self.types.items[ty_id].end,
-                            .file = old.file,
-                        };
-                    } else {
-                        return error.ExpectedTypeExpression;
-                    }
+                        },
+                    };
                 },
                 .dot => {
                     parent_node.setName("Property access");
@@ -704,7 +703,7 @@ pub const Parser = struct {
                     parent_node.setEstimatedTotalItems(1);
 
                     var args_node = parent_node.start("Arguments", 0);
-                    var args = std.ArrayList(*Node).empty;
+                    var args = try std.ArrayList(*Node).initCapacity(self.allocator, 4);
                     while (!self.matches(.close_paren)) {
                         args_node.increaseEstimatedTotalItems(1);
                         try args.append(self.allocator, try self.parseExpr(0, &args_node));
@@ -924,21 +923,19 @@ pub const Parser = struct {
         slice,
     };
 
-    fn tryParseType(self: *Parser, previous: *const std.Progress.Node) anyerror!?TypeHandle {
-        var parent_node = previous.start("Trying to parse type", 1);
+    fn parseType(self: *Parser, previous: *const std.Progress.Node) anyerror!TypeHandle {
+        var parent_node = previous.start("Type", 1);
         defer parent_node.end();
 
-        const start = self.current;
-
-        var mods = std.ArrayList(ModTag).empty;
+        var mods = try std.ArrayList(ModTag).initCapacity(self.allocator, 3);
         defer mods.deinit(self.allocator);
 
-        var try_node = parent_node.start("Collecting type modifiers", 0);
+        var try_node = parent_node.start("Collecting Modifiers", 0);
         errdefer try_node.end();
         while (!self.isAtEnd()) {
             if (self.matches(.star)) {
                 try_node.increaseEstimatedTotalItems(1);
-                var node = try_node.start("Pointer modifier", 0);
+                var node = try_node.start("Pointer", 0);
                 errdefer node.end();
 
                 _ = self.advance();
@@ -946,7 +943,7 @@ pub const Parser = struct {
                 node.end();
             } else if (self.matches(.open_bracket)) {
                 try_node.increaseEstimatedTotalItems(1);
-                var node = try_node.start("Array modifier", 0);
+                var node = try_node.start("Array", 0);
                 defer node.end();
 
                 _ = self.advance();
@@ -984,28 +981,20 @@ pub const Parser = struct {
                 var this_node = parent_node.start("Function type", 2);
                 defer this_node.end();
 
-                const return_ty = try self.tryParseType(&this_node);
-                if (return_ty == null) {
-                    self.current = start;
-                    return null;
-                }
-
+                const return_ty = try self.parseType(&this_node);
                 const params_start = self.types.items.len;
 
                 if (self.matches(.open_paren)) {
                     _ = try self.expect(.open_paren, &this_node);
                     while (!self.matches(.close_paren)) {
-                        if (try self.tryParseType(&this_node) != null)
-                            continue;
-                        self.current = start;
-                        return null;
+                        _ = try self.parseType(&this_node);
                     }
                     _ = try self.expect(.close_paren, &this_node);
                 }
                 const params_end = self.types.items.len - 1;
                 break :blk Type{
                     .func = .{
-                        .returns = return_ty.?,
+                        .returns = return_ty,
                         .params_start = params_start,
                         .params_end = params_end,
                     },
@@ -1013,8 +1002,14 @@ pub const Parser = struct {
             },
             .identifier => break :blk Type{ .named = self.current - 1 },
             else => {
-                self.current = start;
-                return null;
+                try self.logger.add(self.allocator, .{
+                    .start = base_t.start,
+                    .end = base_t.end,
+                    .file = base_t.file,
+                    .kind = .{ .ParseError = .UnexpectedTypeToken },
+                    .message = "expected type",
+                });
+                return error.UnexpectedTypeToken;
             },
         };
 
@@ -1057,307 +1052,139 @@ pub const Parser = struct {
         return self.types.items.len - 1;
     }
 
-    fn tryParseVar(self: *Parser, previous: *const std.Progress.Node) !?*Node {
-        var parent_node = previous.start("Try variable", 2);
-        defer parent_node.end();
+    fn parseFn(self: *Parser, previous: *const std.Progress.Node) !*Node {
+        var pn = previous.start("Fn", 3);
+        defer pn.end();
 
-        const start = self.current;
-        const ty = try self.tryParseType(&parent_node);
-        if (ty == null) {
-            self.current = start;
-            return null;
-        }
-        if (self.peek().kind == .identifier and
-            (self.next().kind == .semicolon or self.next().kind == .assign))
-        {
-            parent_node.setName("Const variable");
+        const start = (try self.expect(.kw_fn, &pn)).start;
 
-            const name = self.current;
+        const namei = self.current;
+        _ = try self.expect(.identifier, &pn);
+
+        const generics_start = @max(@as(isize, @intCast(self.types.items.len)) - 1, 0);
+        if (self.matches(.lt)) {
+            pn.increaseEstimatedTotalItems(1);
+            const this = pn.start("Generics", 0);
+            defer this.end();
+
             _ = self.advance();
-
-            if (self.peek().kind == .semicolon) {
-                const node = try self.allocator.create(Node);
-                node.* = Node{
-                    .data = .{
-                        .var_stmt = .{
-                            .name = name,
-                            .mut = false,
-                            .ty = ty.?,
-                            .val = null,
-                        },
-                    },
-                    .tag = .var_stmt,
-                    .start = self.types.items[ty.?].start,
-                    .end = self.peek().end,
-                    .file = self.tokens[name].file,
-                };
-
-                return node;
+            while (!self.isAtEnd() and !self.matches(.gt)) {
+                pn.increaseEstimatedTotalItems(1);
+                _ = try self.parseType(&pn);
             }
-            _ = try self.expect(.assign, &parent_node);
-            const val = try self.parseExpr(0, &parent_node);
+            _ = try self.expect(.gt, &pn);
+        }
+        const generics_end = @max(@as(isize, @as(isize, @intCast(self.types.items.len)) - 1), 0);
+
+        _ = try self.expect(.open_paren, &pn);
+
+        var params = try std.ArrayList(*Node).initCapacity(self.allocator, 4);
+        var paramsn = pn.start("Params", 0);
+        while (!self.isAtEnd() and !self.matches(.close_paren)) {
+            const pnamei = self.current;
+            const pname = try self.expect(.identifier, &pn);
+            _ = try self.expect(.colon, &pn);
+
+            pn.increaseEstimatedTotalItems(1);
+            const pty = try self.parseType(&pn);
 
             const node = try self.allocator.create(Node);
             node.* = Node{
+                .start = pname.start,
+                .end = self.types.items[pty].end,
+                .file = pname.file,
+                .tag = .param,
                 .data = .{
-                    .var_stmt = .{
-                        .name = name,
-                        .mut = false,
-                        .ty = ty.?,
-                        .val = val,
+                    .param = .{
+                        .name = pnamei,
+                        .ty = pty,
                     },
                 },
-                .tag = .var_stmt,
-                .start = self.types.items[ty.?].start,
-                .end = self.peek().end,
-                .file = self.tokens[name].file,
             };
-            return node;
-        } else if (self.peek().kind == .kw_mut and self.next().kind == .identifier) {
-            parent_node.setName("Mut variable");
-
-            _ = self.advance();
-            const name = self.current + 1;
-            _ = self.advance();
-
-            const node = try self.allocator.create(Node);
-            if (self.peek().kind == .semicolon) {
-                node.* = .{
-                    .data = .{
-                        .var_stmt = .{
-                            .ty = ty.?,
-                            .mut = true,
-                            .name = name,
-                            .val = null,
-                        },
-                    },
-                    .tag = .var_stmt,
-                    .start = self.types.items[ty.?].start,
-                    .end = self.peek().end,
-                    .file = self.tokens[name].file,
-                };
-                return node;
-            }
-            _ = try self.expect(.assign, &parent_node);
-            const val = try self.parseExpr(0, &parent_node);
-
-            node.* = .{
-                .data = .{
-                    .var_stmt = .{
-                        .name = name,
-                        .mut = true,
-                        .ty = ty.?,
-                        .val = val,
-                    },
-                },
-                .tag = .var_stmt,
-                .start = self.types.items[ty.?].start,
-                .end = self.peek().end,
-                .file = self.tokens[name].file,
-            };
-            return node;
+            try params.append(self.allocator, node);
         }
-        self.current = start;
-        return null;
+        _ = try self.expect(.close_paren, &paramsn);
+        paramsn.end();
+
+        const retty = try self.parseType(&pn);
+
+        _ = try self.expect(.open_body, &pn);
+        var blockn = pn.start("Body", 0);
+        const body = try self.parseBlock(&blockn);
+        const end = try self.expect(.close_body, &pn);
+        blockn.end();
+
+        const node = try self.allocator.create(Node);
+        node.* = Node{
+            .start = start,
+            .end = end.end,
+            .file = end.file,
+            .tag = .fn_stmt,
+            .data = .{
+                .fn_stmt = .{
+                    .name = namei,
+                    .body = body,
+                    .params = try params.toOwnedSlice(self.allocator),
+                    .gens = .{
+                        .start = generics_start,
+                        .end = generics_end,
+                    },
+                    .returns = retty,
+                },
+            },
+        };
+        return node;
     }
 
-    fn tryParseVarOrFn(self: *Parser, previous: *const std.Progress.Node) !?*Node {
-        var parent_node = previous.start("Try variable or function", 1);
-        defer parent_node.end();
+    fn parseLet(self: *Parser, previous: *const std.Progress.Node) !*Node {
+        var pn = previous.start("Let", 0);
+        defer pn.end();
 
-        const start = self.current;
-        const ty = try self.tryParseType(&parent_node);
-        if (ty == null) {
-            parent_node.end();
-            self.current = start;
-            return null;
-        }
+        const start = try self.expect(.kw_let, &pn);
 
         var mut = false;
-        var mut_t: usize = undefined;
-        if (self.peek().kind == .kw_mut) {
-            mut = true;
-            mut_t = self.current;
+        if (self.matches(.kw_mut)) {
             _ = self.advance();
+            mut = true;
         }
 
-        const idstart = self.peek();
-        if (self.peek().kind == .identifier) {
-            switch (self.next().kind) {
-                .open_paren => {
-                    if (mut) {
-                        try self.logger.add(self.allocator, .{
-                            .start = self.tokens[mut_t].start,
-                            .end = self.tokens[mut_t].end,
-                            .file = self.tokens[mut_t].file,
-                            .message = "function cannot be 'mut'",
-                            .kind = .{ .ParseError = ParseError.MutFunction },
-                        });
-                        return error.MutFunction;
-                    }
+        const name = self.current;
+        _ = try self.expect(.identifier, &pn);
 
-                    parent_node.setName("Function");
-                    parent_node.increaseEstimatedTotalItems(2);
-
-                    const name = self.current;
-                    _ = try self.expect(.identifier, &parent_node);
-                    _ = try self.expect(.open_paren, &parent_node);
-
-                    var params = try std.ArrayList(*Node).initCapacity(self.allocator, 3);
-
-                    var params_node = parent_node.start("Parsing parameters", 0);
-                    errdefer params_node.end();
-
-                    while (!self.isAtEnd() and !self.matches(.close_paren)) {
-                        const pstart = self.current;
-                        if (try self.tryParseType(&params_node)) |typ| {
-                            const pname = self.current;
-                            _ = try self.expect(.identifier, &params_node);
-
-                            const node = try self.allocator.create(Node);
-                            node.* = Node{
-                                .start = self.tokens[pstart].start,
-                                .end = self.peek().end,
-                                .file = self.peek().file,
-                                .data = .{
-                                    .param = .{
-                                        .name = pname,
-                                        .ty = typ,
-                                    },
-                                },
-                                .tag = .param,
-                            };
-                            try params.append(self.allocator, node);
-
-                            if (self.peek().kind == .comma) {
-                                _ = try self.expect(.comma, &params_node);
-                            } else {
-                                break;
-                            }
-                        } else {
-                            const found_ty = self.peek();
-                            try self.logger.add(self.allocator, .{
-                                .kind = .{ .ParseError = ParseError.ExpectedTypeExpression },
-                                .start = found_ty.start,
-                                .end = self.next().end,
-                                .file = found_ty.file,
-                                .message = try self.allocator.print(
-                                    "expected type of parameter, found '{s}' ({s})",
-                                    .{
-                                        self.file_table.spanStr(found_ty.file, found_ty.start, found_ty.end),
-                                        @tagName(found_ty.kind),
-                                    },
-                                ),
-                                .note = .{
-                                    .message = "function declared here",
-                                    .start = idstart.start,
-                                    .end = idstart.end,
-                                    .file = idstart.file,
-                                },
-                            });
-                            self.current = start;
-                            return error.ExpectedTypeExpression;
-                        }
-                    }
-                    _ = try self.expect(.close_paren, &parent_node);
-                    _ = try self.expect(.open_body, &parent_node);
-
-                    params_node.end();
-
-                    const body = try self.parseBlock(&parent_node);
-                    _ = try self.expect(.close_body, &parent_node);
-
-                    const node = try self.allocator.create(Node);
-                    node.* = Node{
-                        .start = start,
-                        .end = self.tokens[start].start,
-                        .file = self.tokens[start].file,
-                        .data = .{
-                            .fn_stmt = .{
-                                .name = name,
-                                .body = body,
-                                .params = params.items,
-                                .returns = ty.?,
-                            },
-                        },
-                        .tag = .fn_stmt,
-                    };
-                    return node;
-                },
-                .open_body => {
-                    if (mut) {
-                        try self.logger.add(self.allocator, .{
-                            .start = self.tokens[mut_t].start,
-                            .end = self.tokens[mut_t].end,
-                            .file = self.tokens[mut_t].file,
-                            .message = "functions cannot be 'mut'",
-                            .kind = .{ .ParseError = ParseError.MutFunction },
-                        });
-                        return error.MutFunction;
-                    }
-
-                    parent_node.setName("Function");
-                    parent_node.increaseEstimatedTotalItems(1);
-
-                    const name = self.current;
-                    _ = try self.expect(.identifier, &parent_node);
-                    _ = try self.expect(.open_body, &parent_node);
-
-                    const body = try self.parseBlock(&parent_node);
-                    _ = try self.expect(.close_body, &parent_node);
-
-                    const node = try self.allocator.create(Node);
-                    node.* = .{
-                        .start = self.tokens[start].start,
-                        .end = self.peek().end,
-                        .file = self.tokens[name].file,
-                        .data = .{
-                            .fn_stmt = .{
-                                .name = name,
-                                .body = body,
-                                .params = null,
-                                .returns = ty.?,
-                            },
-                        },
-                        .tag = .fn_stmt,
-                    };
-                    return node;
-                },
-                .assign => {
-                    parent_node.setName("Variable");
-                    parent_node.increaseEstimatedTotalItems(1);
-
-                    const name = self.current;
-                    _ = try self.expect(.identifier, &parent_node);
-                    _ = try self.expect(.assign, &parent_node);
-                    const expr = try self.parseExpr(0, &parent_node);
-
-                    const node = try self.allocator.create(Node);
-                    node.* = .{
-                        .start = self.tokens[start].start,
-                        .end = self.peek().end,
-                        .file = expr.file,
-                        .data = .{
-                            .var_stmt = .{
-                                .ty = ty.?,
-                                .mut = mut,
-                                .name = name,
-                                .val = expr,
-                            },
-                        },
-                        .tag = .var_stmt,
-                    };
-                    return node;
-                },
-                else => {},
-            }
+        var ty: ?TypeHandle = null;
+        if (self.matches(.colon)) {
+            pn.increaseEstimatedTotalItems(1);
+            _ = self.advance();
+            ty = try self.parseType(&pn);
         }
-        self.current = start;
-        return null;
+
+        var val: ?*Node = null;
+        if (self.matches(.assign)) {
+            pn.increaseEstimatedTotalItems(1);
+            _ = self.advance();
+            val = try self.parseExpr(0, &pn);
+        }
+
+        const node = try self.allocator.create(Node);
+        node.* = Node{
+            .start = start.start,
+            .end = self.peek().end,
+            .file = start.file,
+            .tag = .let_stmt,
+            .data = .{
+                .let_stmt = .{
+                    .name = name,
+                    .mut = mut,
+                    .ty = ty,
+                    .val = val,
+                },
+            },
+        };
+        return node;
     }
 
     fn parseRet(self: *Parser, previous: *const std.Progress.Node) !*Node {
-        var ret_node = previous.start("Return", 1);
+        var ret_node = previous.start("Ret", 1);
         defer ret_node.end();
 
         const start = self.current;
@@ -1522,27 +1349,10 @@ pub const Parser = struct {
 
         parent_node.setEstimatedTotalItems(4);
 
-        const errstart1 = self.peek().start;
         if (self.matches(.semicolon)) {
             vari = null;
-        } else if (try self.tryParseVar(&parent_node)) |varib| {
-            vari = varib;
         } else {
-            const found_var = self.peek();
-            try self.logger.add(self.allocator, .{
-                .kind = .{ .ParseError = ParseError.ExpectedVariableStmt },
-                .start = errstart1,
-                .end = self.next().end,
-                .file = self.peek().file,
-                .message = try self.allocator.print(
-                    "expected a variable declaration or ';' to start the 'for' header, found '{s}' ({s})",
-                    .{
-                        self.file_table.spanStr(found_var.file, found_var.start, found_var.end),
-                        @tagName(found_var.kind),
-                    },
-                ),
-            });
-            return error.ExpectedVariableStmt;
+            vari = try self.parseLet(&parent_node);
         }
         _ = try self.expect(.semicolon, &parent_node);
 
@@ -1597,66 +1407,6 @@ pub const Parser = struct {
         return node;
     }
 
-    fn parseStruct(self: *Parser, previous: *const std.Progress.Node) !*Node {
-        var this_node = previous.start("Struct", 0);
-        defer this_node.end();
-
-        const start = self.current;
-        _ = try self.expect(.kw_struct, &this_node);
-
-        const name = self.current;
-        _ = try self.expect(.identifier, &this_node);
-
-        _ = try self.expect(.open_body, &this_node);
-
-        var fields = std.ArrayList(*Node).empty;
-        while (!self.isAtEnd() and !self.matches(.close_body)) {
-            this_node.increaseEstimatedTotalItems(1);
-
-            if (self.peek().kind == .kw_mut) {}
-
-            if (try self.tryParseVar(&this_node)) |n| {
-                if (n.data.var_stmt.val != null) {
-                    try self.logger.add(self.allocator, .{
-                        .start = n.start,
-                        .end = n.end,
-                        .file = n.file,
-                        .message = "structs cannot have default values",
-                        .kind = .{ .ParseError = ParseError.UnexpectedDefaultValue },
-                    });
-                    return error.UnexpectedDefaultValue;
-                }
-                try fields.append(self.allocator, n);
-            } else {
-                try self.logger.add(self.allocator, .{
-                    .start = self.peek().start,
-                    .end = self.peek().end,
-                    .file = self.peek().file,
-                    .message = "expected field in struct body",
-                    .kind = .{ .ParseError = ParseError.UnexpectedKwInStruct },
-                });
-                return error.UnexpectedKwInStruct;
-            }
-            _ = try self.expect(.semicolon, &this_node);
-        }
-        _ = try self.expect(.close_body, &this_node);
-
-        const node = try self.allocator.create(Node);
-        node.* = .{
-            .data = .{
-                .struct_stmt = .{
-                    .name = name,
-                    .fields = try fields.toOwnedSlice(self.allocator),
-                },
-            },
-            .tag = .struct_stmt,
-            .start = self.tokens[start].start,
-            .end = self.peek().end,
-            .file = self.tokens[self.current - 1].file,
-        };
-        return node;
-    }
-
     fn parsePub(self: *Parser, previous: *const std.Progress.Node) !*Node {
         var this_node = previous.start("Pub", 1);
         defer this_node.end();
@@ -1664,63 +1414,25 @@ pub const Parser = struct {
         const start = self.current;
         _ = try self.expect(.kw_pub, &this_node);
 
-        if (try self.tryParseVar(&this_node)) |mem| {
-            const node = try self.allocator.create(Node);
-            node.* = Node{
-                .data = .{
-                    .pub_stmt = .{
-                        .stmt = mem,
-                    },
+        const old_root = self.root_node;
+        self.root_node = &this_node;
+
+        const mem = try self.parseTop();
+
+        self.root_node = old_root;
+
+        const node = try self.allocator.create(Node);
+        node.* = Node{
+            .start = self.tokens[start].start,
+            .end = mem.end,
+            .file = mem.file,
+            .tag = .pub_stmt,
+            .data = .{
+                .pub_stmt = .{
+                    .stmt = mem,
                 },
-                .tag = .pub_stmt,
-                .start = self.tokens[start].start,
-                .end = self.peek().end,
-                .file = self.tokens[start].file, // should be fine assuming the it isnt spread on multiple
-            };
-            return node;
-        } else if (try self.tryParseVarOrFn(&this_node)) |mem| {
-            const node = try self.allocator.create(Node);
-            node.* = Node{
-                .data = .{
-                    .pub_stmt = .{
-                        .stmt = mem,
-                    },
-                },
-                .tag = .pub_stmt,
-                .start = self.tokens[start].start,
-                .end = mem.end,
-                .file = self.tokens[start].file,
-            };
-            return node;
-        } else if (self.peek().kind == .kw_struct) {
-            const n = try self.allocator.create(Node);
-            n.* = .{
-                .data = .{
-                    .pub_stmt = .{
-                        .stmt = try self.parseStruct(&this_node),
-                    },
-                },
-                .tag = .pub_stmt,
-                .start = self.tokens[start].start,
-                .end = self.peek().end,
-                .file = self.tokens[start].file,
-            };
-            return n;
-        }
-        const found_pub = self.peek();
-        try self.logger.add(self.allocator, .{
-            .kind = .{ .ParseError = ParseError.ExpectedStatement },
-            .start = found_pub.start,
-            .end = found_pub.end,
-            .file = found_pub.file,
-            .message = try self.allocator.print(
-                "expected a variable, function or 'struct' after 'pub', found '{s}' ({s})",
-                .{
-                    self.file_table.spanStr(found_pub.file, found_pub.start, found_pub.end),
-                    @tagName(found_pub.kind),
-                },
-            ),
-        });
-        return error.ExpectedStatement;
+            },
+        };
+        return node;
     }
 };

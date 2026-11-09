@@ -125,6 +125,7 @@ pub const TypeError = enum(u8) {
     MismatchedVariableType = 12,
     UnknownSliceProperty = 13,
     MustBeInit = 14,
+    NeedValOrTy = 15,
 };
 
 pub const Checker = struct {
@@ -197,13 +198,14 @@ pub const Checker = struct {
                 parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
                 var param_types: []TypeHandle = &.{};
-                if (node.data.fn_stmt.params) |params| {
-                    var p_types = try std.ArrayList(TypeHandle).initCapacity(self.allocator, params.len);
-                    for (params) |param| {
-                        try p_types.append(self.allocator, param.data.param.ty);
-                    }
-                    param_types = try p_types.toOwnedSlice(self.allocator);
+                var p_types = try std.ArrayList(TypeHandle).initCapacity(
+                    self.allocator,
+                    node.data.fn_stmt.params.len,
+                );
+                for (node.data.fn_stmt.params) |param| {
+                    try p_types.append(self.allocator, param.data.param.ty);
                 }
+                param_types = try p_types.toOwnedSlice(self.allocator);
 
                 try self.scope_map.define(
                     name,
@@ -223,54 +225,28 @@ pub const Checker = struct {
                     &self.logger,
                 );
 
-                if (node.data.fn_stmt.params) |params| {
-                    for (params) |param| {
-                        try self.scope_map.define(
-                            self.file_table.spanStr(
-                                param.file,
-                                self.tokens[param.data.param.name].start,
-                                self.tokens[param.data.param.name].end,
-                            ),
-                            Symbol{
-                                .kind = .param,
-                                .start = param.start,
-                                .end = param.end,
-                                .file = param.file,
-                                .public = true,
-                                .data = .{
-                                    .param = param.data.param.ty,
-                                },
+                for (node.data.fn_stmt.params) |param| {
+                    try self.scope_map.define(
+                        self.file_table.spanStr(
+                            param.file,
+                            self.tokens[param.data.param.name].start,
+                            self.tokens[param.data.param.name].end,
+                        ),
+                        Symbol{
+                            .kind = .param,
+                            .start = param.start,
+                            .end = param.end,
+                            .file = param.file,
+                            .public = true,
+                            .data = .{
+                                .param = param.data.param.ty,
                             },
-                            &self.logger,
-                        );
-                    }
+                        },
+                        &self.logger,
+                    );
                 }
             },
-            .var_stmt => {
-                const name = self.file_table.spanStr(
-                    node.file,
-                    self.tokens[node.data.var_stmt.name].start,
-                    self.tokens[node.data.var_stmt.name].end,
-                );
-                parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
-
-                try self.scope_map.define(
-                    self.file_table.spanStr(
-                        node.file,
-                        self.tokens[node.data.var_stmt.name].start,
-                        self.tokens[node.data.var_stmt.name].end,
-                    ),
-                    Symbol{
-                        .kind = .vari,
-                        .start = node.start,
-                        .end = node.end,
-                        .file = node.file,
-                        .public = public,
-                        .data = .{ .vari = node.data.var_stmt.ty },
-                    },
-                    &self.logger,
-                );
-            },
+            .let_stmt => {},
             .pub_stmt => {
                 parent_node.setName("Precheck pub top-level statement");
 
@@ -351,7 +327,7 @@ pub const Checker = struct {
                     );
                 }
             },
-            .var_stmt => try self.checkStmt(node, .void, null, &parent_node),
+            .let_stmt => try self.checkStmt(node, .void, null, &parent_node),
             .pub_stmt => {
                 parent_node.setName("Public");
                 try self.checkTop(node.data.pub_stmt.stmt, &parent_node);
@@ -365,38 +341,54 @@ pub const Checker = struct {
         var parent_node = previous.start("Statement", 0);
         defer parent_node.end();
         switch (stmt.tag) {
-            .var_stmt => {
-                parent_node.setName("Variable");
+            .let_stmt => {
+                const let = &stmt.data.let_stmt;
+                const name = self.file_table.spanStr(
+                    stmt.file,
+                    self.tokens[let.name].start,
+                    self.tokens[let.name].end,
+                );
+                parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
-                const v = &stmt.data.var_stmt;
-                try self.scope_map.define(
-                    self.file_table.spanStr(stmt.file, self.tokens[v.name].start, self.tokens[v.name].end),
-                    Symbol{
+                if (let.ty == null and let.val == null) {
+                    try self.logger.add(self.allocator, .{
                         .start = stmt.start,
                         .end = stmt.end,
                         .file = stmt.file,
-                        .kind = .vari,
-                        .data = .{ .vari = v.ty },
-                    },
-                    &self.logger,
+                        .kind = .{ .TypeError = .NeedValOrTy },
+                        .message = "a variable needs to either have a type or a value",
+                    });
+                    return error.NeedValOrTy;
+                }
+                const ty = let.ty orelse try self.getOrAddTyId(
+                    try self.checkExpr(let.val.?),
+                    let.val.?.start,
+                    let.val.?.end,
                 );
 
-                if (v.val) |val| {
-                    const init_ty = try self.checkExpr(val);
-                    const decl_ty = self.types.items[v.ty].ty;
-                    if (!isTyEql(init_ty, decl_ty)) {
-                        try self.logger.add(self.allocator, Error{
-                            .start = val.start,
-                            .end = val.end,
-                            .file = val.file,
-                            .kind = .{ .TypeError = TypeError.MismatchedVariableType },
-                            .message = try std.fmt.allocPrint(
-                                self.allocator,
-                                "cannot assign type '{s}' to variable of type '{s}'",
-                                .{ @tagName(init_ty), @tagName(decl_ty) },
-                            ),
-                        });
-                    }
+                if (let.ty != null and
+                    let.val != null and
+                    !isTyEql(
+                        self.types.items[let.ty.?].ty,
+                        try self.checkExpr(let.val.?),
+                    ))
+                {
+                    try self.scope_map.define(
+                        self.file_table.spanStr(
+                            stmt.file,
+                            self.tokens[let.name].start,
+                            self.tokens[let.name].end,
+                        ),
+                        Symbol{
+                            .kind = .vari,
+                            .start = stmt.start,
+                            .end = stmt.end,
+                            .file = stmt.file,
+                            .public = true,
+                            .data = .{ .vari = ty },
+                        },
+                        &self.logger,
+                    );
                 }
             },
             .ret_stmt => {
@@ -511,30 +503,9 @@ pub const Checker = struct {
                 defer self.scope_map.exit();
 
                 if (f.vari) |vari| {
-                    const n = self.tokens[vari.data.var_stmt.name];
-                    try self.scope_map.define(
-                        self.file_table.spanStr(n.file, n.start, n.end),
-                        Symbol{
-                            .start = vari.start,
-                            .end = vari.end,
-                            .file = vari.file,
-                            .kind = .vari,
-                            .data = .{
-                                .vari = vari.data.var_stmt.ty,
-                            },
-                        },
-                        &self.logger,
-                    );
+                    const let = &vari.data.let_stmt;
 
-                    if (!isNum(self.types.items[vari.data.var_stmt.ty].ty))
-                        try self.logger.add(self.allocator, .{
-                            .start = vari.start,
-                            .end = vari.end,
-                            .file = vari.file,
-                            .kind = .{ .TypeError = TypeError.TypeMismatch },
-                            .message = "expected number as for loop variable type",
-                        });
-                    if (vari.data.var_stmt.val == null or try self.checkExpr(vari.data.var_stmt.val.?) == .null)
+                    if (let.val == null or try self.checkExpr(let.val.?) == .null)
                         try self.logger.add(self.allocator, .{
                             .start = vari.start,
                             .end = vari.end,
@@ -542,6 +513,34 @@ pub const Checker = struct {
                             .kind = .{ .TypeError = TypeError.MustBeInit },
                             .message = "incrementor of for loop must be initialized and not null",
                         });
+
+                    const name = self.tokens[let.name];
+                    const ty = let.ty orelse try self.getOrAddTyId(
+                        try self.checkExpr(vari.data.let_stmt.val.?),
+                        let.val.?.start,
+                        let.val.?.end,
+                    );
+
+                    if (!isNum(self.types.items[ty].ty))
+                        try self.logger.add(self.allocator, .{
+                            .start = vari.start,
+                            .end = vari.end,
+                            .file = vari.file,
+                            .kind = .{ .TypeError = TypeError.TypeMismatch },
+                            .message = "expected number as for loop variable type",
+                        });
+
+                    try self.scope_map.define(
+                        self.file_table.spanStr(name.file, name.start, name.end),
+                        Symbol{
+                            .start = vari.start,
+                            .end = vari.end,
+                            .file = vari.file,
+                            .kind = .vari,
+                            .data = .{ .vari = ty },
+                        },
+                        &self.logger,
+                    );
 
                     if (f.cond) |cond| {
                         _ = try self.checkExpr(cond);
@@ -564,6 +563,21 @@ pub const Checker = struct {
                 .message = "expected a statement",
             }),
         }
+    }
+
+    fn getOrAddTyId(self: *Checker, ty: Type, start: usize, end: usize) !TypeHandle {
+        for (self.types.items, 0..) |tyn, i| {
+            if (!isTyEql(tyn.ty, ty))
+                continue;
+            return i;
+        }
+        const new = self.types.items.len;
+        try self.types.append(self.allocator, .{
+            .ty = ty,
+            .start = start,
+            .end = end,
+        });
+        return new;
     }
 
     fn checkExpr(self: *Checker, node: *Node) !Type {

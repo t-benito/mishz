@@ -80,25 +80,41 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             .block => {
                 try printAst(node.data.block.body, child_indent, writer);
             },
-            .var_stmt => {
+            .let_stmt => {
                 try printIndent(child_indent, writer);
-                try writer.print("name index: {}, type id: {}\n", .{ node.data.var_stmt.name, node.data.var_stmt.ty });
-                if (node.data.var_stmt.val) |val| {
+                try writer.print(
+                    "name index: {}",
+                    .{node.data.let_stmt.name},
+                );
+                if (node.data.let_stmt.ty) |ty| {
+                    try writer.print(
+                        " type id: {}",
+                        .{ty},
+                    );
+                }
+                try writer.writeAll("\n");
+
+                if (node.data.let_stmt.val) |val| {
                     try printAst((&val)[0..1], child_indent, writer);
                 }
             },
             .fn_stmt => {
                 try printIndent(child_indent, writer);
-                try writer.print("name index: {}, returns id: {}\n", .{ node.data.fn_stmt.name, node.data.fn_stmt.returns });
+                try writer.print(
+                    "name index: {}, returns id: {}\n",
+                    .{ node.data.fn_stmt.name, node.data.fn_stmt.returns },
+                );
 
-                if (node.data.fn_stmt.params) |params| {
-                    try printAst(params, child_indent, writer);
-                }
+                // TODO: generics printing
+                try printAst(node.data.fn_stmt.params, child_indent, writer);
                 try printAst(node.data.fn_stmt.body, child_indent, writer);
             },
             .param => {
                 try printIndent(child_indent, writer);
-                try writer.print("name index: {}, type id: {}\n", .{ node.data.param.name, node.data.param.ty });
+                try writer.print(
+                    "name index: {}, type id: {}\n",
+                    .{ node.data.param.name, node.data.param.ty },
+                );
             },
             .ret_stmt => {
                 if (node.data.ret_stmt.val) |val| {
