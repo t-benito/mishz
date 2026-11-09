@@ -193,7 +193,16 @@ pub const Type = union(enum) {
         name: []const u8,
         fields: []Field,
     },
-    named: TokenHandle,
+    named: struct {
+        path: struct {
+            start: TokenHandle,
+            end: TokenHandle,
+        },
+        gens: ?struct {
+            start: TypeHandle,
+            end: TypeHandle,
+        },
+    },
 };
 
 pub const TypeNode = struct {
@@ -1000,7 +1009,61 @@ pub const Parser = struct {
                     },
                 };
             },
-            .identifier => break :blk Type{ .named = self.current - 1 },
+            .identifier => {
+                var this_node = parent_node.start("Named type", 2);
+                defer this_node.end();
+
+                const pstart = self.current - 1;
+
+                var path_node = this_node.start("Path", 0);
+
+                while (self.matches(.dot)) {
+                    _ = try self.expect(.dot, &this_node);
+                    _ = try self.expect(.identifier, &this_node);
+                }
+                const pend = self.current;
+                path_node.end();
+
+                var args_node = this_node.start("Arguments", 0);
+                defer args_node.end();
+
+                if (self.matches(.lt)) {
+                    _ = try self.expect(.lt, &this_node);
+                    const astart: TypeHandle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
+                    while (!self.matches(.gt) and !self.isAtEnd()) {
+                        _ = try self.parseType(&this_node);
+                        if (self.matches(.comma)) {
+                            _ = self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    _ = try self.expect(.gt, &this_node);
+                    const aend: TypeHandle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
+                    break :blk Type{
+                        .named = .{
+                            .path = .{
+                                .start = pstart,
+                                .end = pend,
+                            },
+                            .gens = .{
+                                .start = astart,
+                                .end = aend,
+                            },
+                        },
+                    };
+                } else {
+                    break :blk Type{
+                        .named = .{
+                            .path = .{
+                                .start = pstart,
+                                .end = pend,
+                            },
+                            .gens = null,
+                        },
+                    };
+                }
+            },
             else => {
                 try self.logger.add(self.allocator, .{
                     .start = base_t.start,
