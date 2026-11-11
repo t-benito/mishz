@@ -131,7 +131,8 @@ pub const LexError = enum(u8) {
     UnknownCharacter = 0,
     UnknownDirective = 1,
     UnclosedStringLiteral = 2,
-    InvalidEscape = 3,
+    UnclosedStringIdentifier = 3,
+    InvalidEscape = 4,
 };
 
 pub const Lexer = struct {
@@ -235,6 +236,34 @@ pub const Lexer = struct {
 
             const start = self.current;
 
+            if (self.peek() == '@' and self.next() == '"') {
+                _ = self.advance();
+                _ = self.advance();
+                var got = false;
+                while (!self.isAtEnd() and !got) {
+                    if (self.advance() == '"')
+                        got = true;
+                }
+                if (!got) {
+                    try self.logger.add(allocator, .{
+                        .kind = .{ .LexError = .UnclosedStringIdentifier },
+                        .message = "string identifier missing closing \"",
+                        .start = start,
+                        .end = self.current,
+                        .file = self.file_id,
+                    });
+                    continue;
+                }
+
+                try tokens.append(allocator, .{
+                    .start = start + 2,
+                    .end = self.current - 1,
+                    .kind = .identifier,
+                    .file = self.file_id,
+                });
+                continue;
+            }
+
             if (self.parseDouble()) |kind| {
                 _ = self.advance();
                 _ = self.advance();
@@ -269,7 +298,7 @@ pub const Lexer = struct {
                 if (!got) {
                     try self.logger.add(allocator, .{
                         .kind = .{ .LexError = .UnclosedStringLiteral },
-                        .message = "unclosed string literal (missing closing '\"')",
+                        .message = "string literal missing closing \"",
                         .start = start,
                         .end = self.current,
                         .file = self.file_id,

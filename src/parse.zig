@@ -932,7 +932,12 @@ pub const Parser = struct {
         slice,
     };
 
-    fn parseType(self: *Parser, previous: *const std.Progress.Node) anyerror!TypeHandle {
+    fn parseType(self: *Parser, previous: *const std.Progress.Node) error{
+        OutOfMemory,
+        UnexpectedTypeToken,
+        UnexpectedToken,
+        ExpectedExpression,
+    }!TypeHandle {
         var parent_node = previous.start("Type", 1);
         defer parent_node.end();
 
@@ -1144,8 +1149,8 @@ pub const Parser = struct {
         var params = try std.ArrayList(*Node).initCapacity(self.allocator, 4);
         var paramsn = pn.start("Params", 0);
         while (!self.isAtEnd() and !self.matches(.close_paren)) {
-            const pnamei = self.current;
-            const pname = try self.expect(.identifier, &pn);
+            const pname = self.current;
+            _ = try self.expect(.identifier, &pn);
             _ = try self.expect(.colon, &pn);
 
             pn.increaseEstimatedTotalItems(1);
@@ -1153,13 +1158,13 @@ pub const Parser = struct {
 
             const node = try self.allocator.create(Node);
             node.* = Node{
-                .start = pname.start,
+                .start = self.tokens[pname].start,
                 .end = self.types.items[pty].end,
-                .file = pname.file,
+                .file = self.tokens[pname].file,
                 .tag = .param,
                 .data = .{
                     .param = .{
-                        .name = pnamei,
+                        .name = pname,
                         .ty = pty,
                     },
                 },
@@ -1364,7 +1369,7 @@ pub const Parser = struct {
         const start = self.current;
         _ = try self.expect(.kw_for, &parent_node);
 
-        var vari: ?*Node = undefined;
+        var vari: ?*Node = null;
         var cond: ?*Node = undefined;
         var incr: ?*Node = undefined;
 
@@ -1386,7 +1391,7 @@ pub const Parser = struct {
                     .tag = .block,
                     .start = self.tokens[sstart].start,
                     .end = self.peek().end,
-                    .file = body.file,
+                    .file = self.tokens[sstart].file,
                 };
                 _ = try self.expect(.close_body, &parent_node);
             } else {
@@ -1409,12 +1414,53 @@ pub const Parser = struct {
             };
             return node;
         }
+        // special case for an expression (while)
+        if (!self.matches(.kw_let) and !self.matches(.semicolon)) {
+            parent_node.increaseEstimatedTotalItems(1);
+
+            cond = try self.parseExpr(0, &parent_node);
+
+            var body: *Node = undefined;
+            if (self.matches(.open_body)) {
+                const sstart = self.current;
+                _ = self.advance();
+
+                body = try self.allocator.create(Node);
+                body.* = Node{
+                    .data = .{
+                        .block = .{
+                            .body = try self.parseBlock(&parent_node),
+                        },
+                    },
+                    .tag = .block,
+                    .start = self.tokens[sstart].start,
+                    .end = self.peek().end,
+                    .file = self.tokens[sstart].file,
+                };
+            } else {
+                _ = try self.expect(.colon, &parent_node);
+                body = try self.parseStmt(&parent_node);
+            }
+
+            node.* = Node{
+                .data = .{
+                    .for_stmt = .{
+                        .vari = null,
+                        .incr = null,
+                        .cond = cond,
+                        .body = body,
+                    },
+                },
+                .tag = .for_stmt,
+                .start = self.tokens[start].start,
+                .end = self.peek().end,
+                .file = self.tokens[start].file,
+            };
+        }
 
         parent_node.setEstimatedTotalItems(4);
 
-        if (self.matches(.semicolon)) {
-            vari = null;
-        } else {
+        if (self.matches(.kw_let)) {
             vari = try self.parseLet(&parent_node);
         }
         _ = try self.expect(.semicolon, &parent_node);
