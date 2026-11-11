@@ -6,11 +6,9 @@ const Data = parse.Data;
 const Tag = parse.Tag;
 const Type = parse.Type;
 const TypeNode = parse.TypeNode;
-const TypeHandle = parse.TypeHandle;
 
 const lex = @import("lex.zig");
 const Token = lex.Token;
-const TokenHandle = lex.TokenHandle;
 
 const err = @import("error.zig");
 const Error = err.Error;
@@ -35,12 +33,12 @@ const Symbol = struct {
         param,
     };
     pub const Data = union {
-        vari: TypeHandle,
+        vari: Type.Handle,
         func: struct {
-            params: []TypeHandle,
-            returns: TypeHandle,
+            params: []Type.Handle,
+            returns: Type.Handle,
         },
-        param: TypeHandle,
+        param: Type.Handle,
     };
 };
 
@@ -141,7 +139,7 @@ pub const Checker = struct {
     root_node: *const std.Progress.Node,
     logger: err.ErrorLogger,
 
-    string_ty_id: TypeHandle,
+    string_ty_id: Type.Handle,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -197,8 +195,8 @@ pub const Checker = struct {
                 );
                 parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
-                var param_types: []TypeHandle = &.{};
-                var p_types = try std.ArrayList(TypeHandle).initCapacity(
+                var param_types: []Type.Handle = &.{};
+                var p_types = try std.ArrayList(Type.Handle).initCapacity(
                     self.allocator,
                     node.data.fn_stmt.params.len,
                 );
@@ -259,7 +257,7 @@ pub const Checker = struct {
     fn buildCache(self: *Checker) !void {
         var parent_node = self.root_node.start("Building cache", 0);
         defer parent_node.end();
-        var u8_type_id: ?TypeHandle = null;
+        var u8_type_id: ?Type.Handle = null;
         for (self.types.items, 0..) |t, idx| {
             switch (t.ty) {
                 .u8 => {
@@ -565,7 +563,7 @@ pub const Checker = struct {
         }
     }
 
-    fn getOrAddTyId(self: *Checker, ty: Type, start: usize, end: usize) !TypeHandle {
+    fn getOrAddTyId(self: *Checker, ty: Type, start: usize, end: usize) !Type.Handle {
         for (self.types.items, 0..) |tyn, i| {
             if (!isTyEql(tyn.ty, ty))
                 continue;

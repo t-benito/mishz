@@ -109,7 +109,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     };
     defer allocator.free(source);
 
-    const progress_name = try std.fmt.allocPrint(allocator, "Compile {s}", .{std.fs.path.basename(path)});
+    const progress_name = try allocator.print("Compile {s}", .{std.fs.path.basename(path)});
     defer allocator.free(progress_name);
 
     var root_progress = std.Progress.start(io, .{ .root_name = progress_name });

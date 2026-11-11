@@ -6,9 +6,9 @@ const ft = @import("file_table.zig");
 const FileTable = ft.FileTable;
 const FileHandle = ft.FileHandle;
 
-pub const TokenHandle = u32;
-
 pub const Token = struct {
+    pub const Handle = u32;
+
     start: usize,
     end: usize,
     kind: Kind,
@@ -86,6 +86,7 @@ pub const Token = struct {
         kw_or,
         kw_import,
         kw_use,
+        kw_impl,
 
         identifier,
         string_literal,
@@ -124,6 +125,7 @@ pub const Token = struct {
         .{ "or", .kw_or },
         .{ "import", .kw_import },
         .{ "use", .kw_use },
+        .{ "impl", .kw_impl },
     });
 };
 

@@ -1,8 +1,8 @@
 const std = @import("std");
+const ArrayList = std.ArrayList;
 
 const lex = @import("lex.zig");
 const Token = lex.Token;
-pub const TokenHandle = lex.TokenHandle;
 
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
@@ -61,19 +61,20 @@ pub const Tag = enum {
     if_stmt,
     for_stmt,
     struct_stmt,
+    struct_field,
     pub_stmt,
     cast,
 };
 
 pub const Data = union {
-    token: TokenHandle,
+    token: Token.Handle,
     builtin: struct {
-        name: TokenHandle,
+        name: Token.Handle,
         args: []*Node,
     },
     property_access: struct {
         target: *Node,
-        name: TokenHandle,
+        name: Token.Handle,
     },
     array_access: struct {
         target: *Node,
@@ -99,31 +100,31 @@ pub const Data = union {
         fields: []*Node,
     },
     field_init: struct {
-        name: TokenHandle,
+        name: Token.Handle,
         val: *Node,
     },
     block: struct {
         body: []*Node,
     },
     let_stmt: struct {
-        ty: ?TypeHandle,
+        ty: ?Type.Handle,
         mut: bool,
-        name: TokenHandle,
+        name: Token.Handle,
         val: ?*Node,
     },
     fn_stmt: struct {
-        name: TokenHandle,
+        name: Token.Handle,
         params: []*Node,
         gens: struct {
-            start: TypeHandle,
-            end: TypeHandle,
+            start: Type.Handle,
+            end: Type.Handle,
         },
         body: []*Node,
-        returns: TypeHandle,
+        returns: Type.Handle,
     },
     param: struct {
-        name: TokenHandle,
-        ty: TypeHandle,
+        name: Token.Handle,
+        ty: Type.Handle,
     },
     ret_stmt: struct {
         val: ?*Node,
@@ -140,31 +141,35 @@ pub const Data = union {
         body: *Node,
     },
     struct_stmt: struct {
-        name: TokenHandle,
+        name: Token.Handle,
         fields: []*Node,
+    },
+    struct_field: struct {
+        name: Token.Handle,
+        type: Type.Handle,
     },
     pub_stmt: struct {
         stmt: *Node,
     },
     cast: struct {
         expr: *Node,
-        ty: TypeHandle,
+        ty: Type.Handle,
     },
     import_stmt: struct {
         file: FileHandle,
-        alias: TokenHandle,
+        alias: Token.Handle,
     },
 };
 
-pub const TypeHandle = usize;
-
 pub const Field = struct {
     name: []const u8,
-    ty: TypeHandle,
+    ty: Type.Handle,
     mut: bool,
 };
 
 pub const Type = union(enum) {
+    pub const Handle = usize;
+
     void,
     null,
     i8,
@@ -179,28 +184,28 @@ pub const Type = union(enum) {
     f64,
     bool,
     func: struct {
-        returns: TypeHandle,
+        returns: Type.Handle,
         params_start: usize,
         params_end: usize,
     },
-    ptr: TypeHandle,
+    ptr: Type.Handle,
     array: struct {
-        ty: TypeHandle,
+        ty: Type.Handle,
         len: *Node,
     },
-    slice: TypeHandle,
+    slice: Type.Handle,
     strct: struct {
         name: []const u8,
         fields: []Field,
     },
     named: struct {
         path: struct {
-            start: TokenHandle,
-            end: TokenHandle,
+            start: Token.Handle,
+            end: Token.Handle,
         },
         gens: ?struct {
-            start: TypeHandle,
-            end: TypeHandle,
+            start: Type.Handle,
+            end: Type.Handle,
         },
     },
 };
@@ -228,14 +233,14 @@ pub const ParseError = enum(u8) {
     ExpectedTypeExpression = 5,
     UnexpectedKwInStruct = 6,
     UnexpectedDefaultValue = 7,
-    MutFunction = 8,
     UnexpectedTypeToken = 9,
+    PubTwice = 10,
 };
 
 pub const Parser = struct {
     file_table: *FileTable,
     tokens: []Token,
-    current: TokenHandle = 0,
+    current: Token.Handle = 0,
 
     allocator: std.mem.Allocator,
 
@@ -243,7 +248,7 @@ pub const Parser = struct {
     writer: *std.Io.Writer,
     root_node: *const std.Progress.Node,
 
-    types: std.ArrayList(TypeNode),
+    types: ArrayList(TypeNode),
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -258,7 +263,7 @@ pub const Parser = struct {
             .allocator = allocator,
             .logger = .init(file_table),
             .writer = writer,
-            .types = std.ArrayList(TypeNode).initCapacity(allocator, tokens.len / 30) catch std.ArrayList(TypeNode).empty,
+            .types = .initCapacity(allocator, tokens.len / 30) catch .empty,
             .root_node = progress,
         };
     }
@@ -360,6 +365,8 @@ pub const Parser = struct {
             .kw_pub => "pub",
             .kw_struct => "struct",
             .kw_as => "as",
+            .kw_import => "import",
+            .kw_impl => "impl",
             else => @tagName(kind),
         };
     }
@@ -387,7 +394,7 @@ pub const Parser = struct {
     }
 
     pub fn run(self: *Parser) ![]*Node {
-        var nodes = try std.ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 12);
+        var nodes = try ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 12);
         while (!self.isAtEnd()) {
             const top = self.parseTop() catch {
                 self.syncErr();
@@ -407,7 +414,7 @@ pub const Parser = struct {
         //var parent_node = previous.start("Body", 0);
         //defer parent_node.end();
 
-        var body = try std.ArrayList(*Node).initCapacity(self.allocator, 24);
+        var body = try ArrayList(*Node).initCapacity(self.allocator, 24);
 
         while (!self.isAtEnd()) {
             if (self.peek().kind == .close_body) {
@@ -425,14 +432,14 @@ pub const Parser = struct {
         defer top_node.end();
 
         switch (self.peek().kind) {
-            //.kw_struct => return try self.parseStruct(&top_node),
+            .kw_struct => return try self.parseStruct(&top_node),
             .kw_pub => return try self.parsePub(&top_node),
             .kw_let => return try self.parseLet(&top_node),
             .kw_fn => return try self.parseFn(&top_node),
             else => {
                 const found_top = self.peek();
                 try self.logger.add(self.allocator, .{
-                    .kind = .{ .ParseError = ParseError.ExpectedTopLevelStatement },
+                    .kind = .{ .ParseError = .ExpectedTopLevelStatement },
                     .start = found_top.start,
                     .end = self.next().end,
                     .file = found_top.file,
@@ -593,7 +600,7 @@ pub const Parser = struct {
                 _ = try self.expect(.identifier, &parent_node);
                 _ = try self.expect(.open_paren, &parent_node);
 
-                var args = std.ArrayList(*Node).empty;
+                var args = ArrayList(*Node).initCapacity(self.allocator, 2);
                 while (!self.matches(.close_paren)) {
                     try args.append(self.allocator, try self.parseExpr(0, &parent_node));
                     if (self.matches(.comma)) {
@@ -645,7 +652,7 @@ pub const Parser = struct {
             },
             else => {
                 try self.logger.add(self.allocator, .{
-                    .kind = .{ .ParseError = ParseError.ExpectedExpression },
+                    .kind = .{ .ParseError = .ExpectedExpression },
                     .start = lhs_t.start,
                     .end = lhs_t.end,
                     .file = lhs_t.file,
@@ -712,7 +719,7 @@ pub const Parser = struct {
                     parent_node.setEstimatedTotalItems(1);
 
                     var args_node = parent_node.start("Arguments", 0);
-                    var args = try std.ArrayList(*Node).initCapacity(self.allocator, 4);
+                    var args = try ArrayList(*Node).initCapacity(self.allocator, 4);
                     while (!self.matches(.close_paren)) {
                         args_node.increaseEstimatedTotalItems(1);
                         try args.append(self.allocator, try self.parseExpr(0, &args_node));
@@ -747,11 +754,12 @@ pub const Parser = struct {
                     parent_node.setName("Struct initialization");
 
                     const start = self.advance();
-                    var fields = try std.ArrayList(*Node).initCapacity(self.allocator, 10);
+                    var fields = try ArrayList(*Node).initCapacity(self.allocator, 5);
                     while (!self.isAtEnd() and !self.matches(.close_body)) {
                         parent_node.increaseEstimatedTotalItems(1);
 
-                        const st = try self.expect(.dot, &parent_node);
+                        const sstart = self.current;
+                        _ = try self.expect(.dot, &parent_node);
                         const name = self.current;
                         _ = try self.expect(.identifier, &parent_node);
 
@@ -767,7 +775,7 @@ pub const Parser = struct {
                                 },
                             },
                             .tag = .field_init,
-                            .start = st.start,
+                            .start = self.tokens[sstart].start,
                             .end = v.end,
                             .file = v.file,
                         };
@@ -937,11 +945,11 @@ pub const Parser = struct {
         UnexpectedTypeToken,
         UnexpectedToken,
         ExpectedExpression,
-    }!TypeHandle {
+    }!Type.Handle {
         var parent_node = previous.start("Type", 1);
         defer parent_node.end();
 
-        var mods = try std.ArrayList(ModTag).initCapacity(self.allocator, 3);
+        var mods = try ArrayList(ModTag).initCapacity(self.allocator, 3);
         defer mods.deinit(self.allocator);
 
         var try_node = parent_node.start("Collecting Modifiers", 0);
@@ -1034,7 +1042,7 @@ pub const Parser = struct {
 
                 if (self.matches(.lt)) {
                     _ = try self.expect(.lt, &this_node);
-                    const astart: TypeHandle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
+                    const astart: Type.Handle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
                     while (!self.matches(.gt) and !self.isAtEnd()) {
                         _ = try self.parseType(&this_node);
                         if (self.matches(.comma)) {
@@ -1044,7 +1052,7 @@ pub const Parser = struct {
                         }
                     }
                     _ = try self.expect(.gt, &this_node);
-                    const aend: TypeHandle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
+                    const aend: Type.Handle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
                     break :blk Type{
                         .named = .{
                             .path = .{
@@ -1146,7 +1154,7 @@ pub const Parser = struct {
 
         _ = try self.expect(.open_paren, &pn);
 
-        var params = try std.ArrayList(*Node).initCapacity(self.allocator, 4);
+        var params = try ArrayList(*Node).initCapacity(self.allocator, 4);
         var paramsn = pn.start("Params", 0);
         while (!self.isAtEnd() and !self.matches(.close_paren)) {
             const pname = self.current;
@@ -1219,7 +1227,7 @@ pub const Parser = struct {
         const name = self.current;
         _ = try self.expect(.identifier, &pn);
 
-        var ty: ?TypeHandle = null;
+        var ty: ?Type.Handle = null;
         if (self.matches(.colon)) {
             pn.increaseEstimatedTotalItems(1);
             _ = self.advance();
@@ -1516,6 +1524,56 @@ pub const Parser = struct {
         return node;
     }
 
+    fn parseStruct(self: *Parser, previous: *const std.Progress.Node) !*Node {
+        var pn = previous.start("Struct", 0);
+        defer pn.end();
+
+        const start = self.current;
+        _ = try self.expect(.kw_struct, &pn);
+
+        const name = self.current;
+        _ = try self.expect(.identifier, &pn);
+
+        _ = try self.expect(.open_body, &pn);
+        var fields = try ArrayList(*Node).initCapacity(self.allocator, 5);
+        while (!self.isAtEnd() and !self.matches(.close_body)) {
+            pn.increaseEstimatedTotalItems(1);
+
+            const fname = self.current;
+            _ = try self.expect(.identifier, &pn);
+            _ = try self.expect(.colon, &pn);
+            const ftype = try self.parseType(&pn);
+
+            try fields.append(self.allocator, .{
+                .start = self.tokens[fname].start,
+                .end = self.types[ftype].end,
+                .file = self.tokens[fname].start,
+                .tag = .struct_field,
+                .data = .{
+                    .struct_field = .{
+                        .name = fname,
+                        .type = ftype,
+                    },
+                },
+            });
+        }
+        _ = try self.expect(.close_body, &pn);
+
+        const node = try self.allocator.create(Node);
+        node.* = Node{
+            .data = .{
+                .struct_stmt = .{
+                    .name = name,
+                    .fields = try fields.toOwnedSlice(self.allocator),
+                },
+            },
+            .tag = .struct_stmt,
+            .start = self.tokens[start].start,
+            .end = self.peek().end,
+            .file = self.tokens[start].file,
+        };
+    }
+
     fn parsePub(self: *Parser, previous: *const std.Progress.Node) !*Node {
         var this_node = previous.start("Pub", 1);
         defer this_node.end();
@@ -1527,6 +1585,16 @@ pub const Parser = struct {
         self.root_node = &this_node;
 
         const mem = try self.parseTop();
+        if (mem.tag == .pub_stmt) {
+            try self.logger.add(self.allocator, .{
+                .start = self.tokens[start].start,
+                .end = self.tokens[start].end,
+                .file = self.tokens[start].file,
+                .kind = .{ .ParseError = .PubTwice },
+                .message = "top level statement cannot be pub twice",
+            });
+            return error.PubTwice;
+        }
 
         self.root_node = old_root;
 
