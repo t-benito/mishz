@@ -7,7 +7,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
-    const clap = b.dependency("clap", .{});
     const exe = b.addExecutable(.{
         .name = "mishz",
         .root_module = b.createModule(.{
@@ -20,8 +19,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
     b.installArtifact(exe);
-
-    exe.root_module.addImport("clap", clap.module("clap"));
 
     const run_step = b.step("run", "Run the app");
 
