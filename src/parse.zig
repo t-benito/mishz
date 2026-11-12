@@ -1464,6 +1464,7 @@ pub const Parser = struct {
                 .end = self.peek().end,
                 .file = self.tokens[start].file,
             };
+            return node;
         }
 
         parent_node.setEstimatedTotalItems(4);
@@ -1556,6 +1557,11 @@ pub const Parser = struct {
                     },
                 },
             });
+            if (self.matches(.comma)) {
+                _ = self.advance();
+            } else {
+                break;
+            }
         }
         _ = try self.expect(.close_body, &pn);
 
