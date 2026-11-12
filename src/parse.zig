@@ -263,7 +263,8 @@ pub const Parser = struct {
             .allocator = allocator,
             .logger = .init(file_table),
             .writer = writer,
-            .types = .initCapacity(allocator, tokens.len / 30) catch .empty,
+            .types = ArrayList(TypeNode).initCapacity(allocator, 2) catch
+                ArrayList(TypeNode).empty,
             .root_node = progress,
         };
     }
@@ -600,7 +601,7 @@ pub const Parser = struct {
                 _ = try self.expect(.identifier, &parent_node);
                 _ = try self.expect(.open_paren, &parent_node);
 
-                var args = ArrayList(*Node).initCapacity(self.allocator, 2);
+                var args = try ArrayList(*Node).initCapacity(self.allocator, 2);
                 while (!self.matches(.close_paren)) {
                     try args.append(self.allocator, try self.parseExpr(0, &parent_node));
                     if (self.matches(.comma)) {
@@ -1123,7 +1124,7 @@ pub const Parser = struct {
         try self.types.append(self.allocator, TypeNode{
             .ty = ty,
             .start = base_t.start,
-            .end = self.peek().end,
+            .end = base_t.end,
         });
         return self.types.items.len - 1;
     }
@@ -1281,7 +1282,7 @@ pub const Parser = struct {
                 },
             },
             .tag = .ret_stmt,
-            .start = start,
+            .start = self.tokens[start].start,
             .end = self.peek().end,
             .file = self.tokens[start].file,
         };
@@ -1545,10 +1546,11 @@ pub const Parser = struct {
             _ = try self.expect(.colon, &pn);
             const ftype = try self.parseType(&pn);
 
-            try fields.append(self.allocator, .{
+            const node = try self.allocator.create(Node);
+            node.* = Node{
                 .start = self.tokens[fname].start,
-                .end = self.types[ftype].end,
-                .file = self.tokens[fname].start,
+                .end = self.types.items[ftype].end,
+                .file = self.tokens[fname].file,
                 .tag = .struct_field,
                 .data = .{
                     .struct_field = .{
@@ -1556,7 +1558,9 @@ pub const Parser = struct {
                         .type = ftype,
                     },
                 },
-            });
+            };
+
+            try fields.append(self.allocator, node);
             if (self.matches(.comma)) {
                 _ = self.advance();
             } else {
@@ -1578,6 +1582,7 @@ pub const Parser = struct {
             .end = self.peek().end,
             .file = self.tokens[start].file,
         };
+        return node;
     }
 
     fn parsePub(self: *Parser, previous: *const std.Progress.Node) !*Node {

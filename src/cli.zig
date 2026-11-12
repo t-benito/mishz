@@ -10,7 +10,7 @@ pub const cmds =
     });
 
 const Usage =
-    \\Mish compiler v0.0.2x
+    \\Mish compiler v0.0.2ya
     \\
     \\Usage:
     \\  mishz <command> [options]
@@ -21,8 +21,9 @@ const Usage =
     \\  zen                Print the current Zen of Mish
     \\
     \\Build Options:
-    \\  -t, --tokens       Print the lexed tokens instead of compiling
-    \\  -a, --ast          Print the AST instead of compiling
+    \\  -t,  --tokens      Print the lexed tokens instead of compiling
+    \\  -a,  --ast         Print the AST instead of compiling
+    \\  -ta, --typedast    Print the typechecked AST instead of compiling
     \\
 ;
 
@@ -51,6 +52,7 @@ fn zen(writer: *std.Io.Writer, _: std.process.Init, _: []const [:0]const u8) !vo
 const BuildFlags = struct {
     tokens: bool = false,
     ast: bool = false,
+    typedast: bool = false,
 
     pub fn parse(writer: *std.Io.Writer, args: []const [:0]const u8) !BuildFlags {
         var result = BuildFlags{};
@@ -59,6 +61,8 @@ const BuildFlags = struct {
                 result.tokens = true;
             } else if (std.mem.eql(u8, "--ast", arg) or std.mem.eql(u8, "-a", arg)) {
                 result.ast = true;
+            } else if (std.mem.eql(u8, "--typedast", arg) or std.mem.eql(u8, "-ta", arg)) {
+                result.typedast = true;
             } else {
                 std.log.err("unknown build flag '{s}'", .{arg});
                 try usage(writer);
@@ -165,4 +169,10 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     );
     checker.run() catch std.process.exit(1);
     checker_progress.end();
+
+    if (flags.typedast) {
+        try astprint.printAst(ast, 0, writer);
+        try writer.flush();
+        return;
+    }
 }

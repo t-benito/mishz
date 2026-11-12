@@ -419,7 +419,7 @@ pub const Checker = struct {
                         .start = stmt.start,
                         .end = stmt.end,
                         .file = stmt.file,
-                        .kind = .{ .TypeError = TypeError.TypeMismatch },
+                        .kind = .{ .TypeError = .TypeMismatch },
                         .message = "expected non-void return value",
                         .note = if (fn_start) |fn_stmt| Note{
                             .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
@@ -439,7 +439,7 @@ pub const Checker = struct {
                         .start = stmt.data.if_stmt.cond.start,
                         .end = stmt.data.if_stmt.cond.end,
                         .file = stmt.data.if_stmt.cond.file,
-                        .kind = .{ .TypeError = TypeError.TypeMismatch },
+                        .kind = .{ .TypeError = .TypeMismatch },
                         .message = "condition of an if statement must be a bool",
                     });
                 }
@@ -484,9 +484,8 @@ pub const Checker = struct {
                         .start = stmt.start,
                         .end = stmt.end,
                         .file = stmt.file,
-                        .kind = .{ .TypeError = TypeError.TypeMismatch },
-                        .message = try std.fmt.allocPrint(
-                            self.allocator,
+                        .kind = .{ .TypeError = .TypeMismatch },
+                        .message = try self.allocator.print(
                             "incompatible types '{s}' and '{s}' in assignment",
                             .{ @tagName(lhs_ty), @tagName(rhs_ty) },
                         ),
@@ -557,7 +556,7 @@ pub const Checker = struct {
                 .start = stmt.start,
                 .end = stmt.end,
                 .file = stmt.file,
-                .kind = .{ .TypeError = TypeError.ExpectedStatement },
+                .kind = .{ .TypeError = .ExpectedStatement },
                 .message = "expected a statement",
             }),
         }

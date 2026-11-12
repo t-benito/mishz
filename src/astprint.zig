@@ -88,7 +88,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 );
                 if (node.data.let_stmt.ty) |ty| {
                     try writer.print(
-                        " type id: {}",
+                        ", type id: {}",
                         .{ty},
                     );
                 }
@@ -141,6 +141,16 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try printIndent(child_indent, writer);
                 try writer.print("name index: {}\n", .{node.data.struct_stmt.name});
                 try printAst(node.data.struct_stmt.fields, child_indent, writer);
+            },
+            .struct_field => {
+                try printIndent(child_indent, writer);
+                try writer.print(
+                    "name index: {}, type index: {}\n",
+                    .{
+                        node.data.struct_field.name,
+                        node.data.struct_field.type,
+                    },
+                );
             },
             .struct_init => {
                 if (node.data.struct_init.name) |n|
