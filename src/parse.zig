@@ -36,6 +36,7 @@ pub const ParseError = enum(u8) {
 
 pub const Parser = struct {
     file_table: *FileTable,
+    file: FileHandle,
     tokens: []Token,
     current: Token.Handle = 0,
 
@@ -52,10 +53,12 @@ pub const Parser = struct {
         writer: *std.Io.Writer,
         tokens: []Token,
         file_table: *FileTable,
+        file: FileHandle,
         progress: *const std.Progress.Node,
     ) Parser {
         return Parser{
             .file_table = file_table,
+            .file = file,
             .tokens = tokens,
             .allocator = allocator,
             .logger = .init(file_table),
@@ -67,12 +70,14 @@ pub const Parser = struct {
     }
 
     fn peek(self: *Parser) Token {
-        if (self.isAtEnd()) return self.tokens[self.tokens.len - 1];
+        if (self.isAtEnd())
+            return self.tokens[self.tokens.len - 1];
         return self.tokens[self.current];
     }
 
     fn next(self: *Parser) Token {
-        if (self.current + 1 >= self.tokens.len) return self.tokens[self.tokens.len - 1];
+        if (self.current + 1 >= self.tokens.len)
+            return self.tokens[self.tokens.len - 1];
         return self.tokens[self.current + 1];
     }
 
@@ -84,7 +89,7 @@ pub const Parser = struct {
         return token;
     }
 
-    fn expect(self: *Parser, kind: Token.Kind, node: *std.Progress.Node) !Token {
+    fn expect(self: *Parser, kind: Token.Kind) !Token {
         const t = self.advance();
         if (t.kind == kind) {
             return t;
@@ -106,8 +111,33 @@ pub const Parser = struct {
             .kind = .{ .ParseError = .UnexpectedToken },
         });
         self.current += 1;
-        const newname = try self.allocator.print("\x1b[31m{s}\x1b[0m", .{node.getName()});
-        node.setName(newname);
+
+        return error.UnexpectedToken;
+    }
+
+    /// Expect a token but with a custom message
+    fn expectMsg(self: *Parser, kind: Token.Kind, msg: []const u8) !Token {
+        const t = self.advance();
+        if (t.kind == kind) {
+            return t;
+        }
+        self.current -= 1;
+        const fmt = try self.allocator.print(
+            "{s}, found '{s}' ({s})", // TODO: maybe not keep the tag name?
+            .{
+                msg,
+                self.file_table.spanStr(t.file, t.start, t.end),
+                @tagName(t.kind),
+            },
+        );
+        try self.logger.add(self.allocator, Error{
+            .message = fmt,
+            .start = t.start,
+            .end = t.start,
+            .file = t.file,
+            .kind = .{ .ParseError = .UnexpectedToken },
+        });
+        self.current += 1;
 
         return error.UnexpectedToken;
     }
@@ -262,18 +292,18 @@ pub const Parser = struct {
         switch (self.peek().kind) {
             .kw_ret => {
                 const stmt = try self.parseRet(&parent_node);
-                _ = try self.expect(.semicolon, &parent_node);
+                _ = try self.expectMsg(.semicolon, "expected ';' after statement");
                 return stmt;
             },
             .kw_let => {
                 const stmt = try self.parseLet(&parent_node);
-                _ = try self.expect(.semicolon, &parent_node);
+                _ = try self.expectMsg(.semicolon, "expected ';' after statement");
                 return stmt;
             },
             .kw_if => return try self.parseIf(&parent_node),
             .kw_for => return try self.parseFor(&parent_node),
             .open_body => {
-                const start = try self.expect(.open_body, &parent_node);
+                const start = try self.expect(.open_body);
                 const body = try self.parseBlock(&parent_node);
 
                 const node = try self.allocator.create(Node);
@@ -288,12 +318,12 @@ pub const Parser = struct {
                     .end = self.peek().end,
                     .file = start.file,
                 };
-                _ = try self.expect(.close_body, &parent_node);
+                _ = try self.expect(.close_body);
                 return node;
             },
             else => {
                 const expr = try self.parseExpr(0, &parent_node);
-                _ = try self.expect(.semicolon, &parent_node);
+                _ = try self.expectMsg(.semicolon, "expected ';' after statement");
                 return expr;
             },
         }
@@ -397,8 +427,8 @@ pub const Parser = struct {
             },
             .at => {
                 const name_tok_i = self.current;
-                _ = try self.expect(.identifier, &parent_node);
-                _ = try self.expect(.open_paren, &parent_node);
+                _ = try self.expect(.identifier);
+                _ = try self.expect(.open_paren);
 
                 var args = try ArrayList(*Node).initCapacity(self.allocator, 2);
                 while (!self.matches(.close_paren)) {
@@ -409,7 +439,7 @@ pub const Parser = struct {
                         break;
                     }
                 }
-                const close_p = try self.expect(.close_paren, &parent_node);
+                const close_p = try self.expect(.close_paren);
 
                 break :blk Node{
                     .data = .{
@@ -426,7 +456,7 @@ pub const Parser = struct {
             },
             .open_paren => {
                 const expr = try self.parseExpr(0, &parent_node);
-                _ = try self.expect(.close_paren, &parent_node);
+                _ = try self.expectMsg(.close_paren, "expected ')' to close '('");
                 break :blk expr.*;
             },
             .not,
@@ -496,7 +526,7 @@ pub const Parser = struct {
                     parent_node.setName("Property access");
 
                     _ = self.advance();
-                    const target = try self.expect(.identifier, &parent_node);
+                    const target = try self.expect(.identifier);
 
                     const old = lhs;
                     lhs = try self.allocator.create(Node);
@@ -524,12 +554,12 @@ pub const Parser = struct {
                         args_node.increaseEstimatedTotalItems(1);
                         try args.append(self.allocator, try self.parseExpr(0, &args_node));
                         if (self.matches(.comma)) {
-                            _ = try self.expect(.comma, &args_node);
+                            _ = try self.expect(.comma);
                         } else {
                             break;
                         }
                     }
-                    const end = try self.expect(.close_paren, &args_node);
+                    const end = try self.expectMsg(.close_paren, "expected ')' to close function call");
                     args_node.end();
                     const old = lhs;
 
@@ -559,11 +589,11 @@ pub const Parser = struct {
                         parent_node.increaseEstimatedTotalItems(1);
 
                         const sstart = self.current;
-                        _ = try self.expect(.dot, &parent_node);
+                        _ = try self.expect(.dot);
                         const name = self.current;
-                        _ = try self.expect(.identifier, &parent_node);
+                        _ = try self.expect(.identifier);
 
-                        _ = try self.expect(.assign, &parent_node);
+                        _ = try self.expect(.assign);
                         const v = try self.parseExpr(0, &parent_node);
 
                         const n = try self.allocator.create(Node);
@@ -587,7 +617,7 @@ pub const Parser = struct {
                             break;
                         }
                     }
-                    _ = try self.expect(.close_body, &parent_node);
+                    _ = try self.expect(.close_body);
 
                     const node = try self.allocator.create(Node);
                     node.* = .{
@@ -665,12 +695,12 @@ pub const Parser = struct {
                 },
                 .open_bracket,
                 => {
-                    _ = try self.expect(.open_bracket, &parent_node);
+                    _ = try self.expect(.open_bracket);
                     parent_node.setName("Array access");
                     parent_node.setEstimatedTotalItems(1);
 
                     const val = try self.parseExpr(0, &parent_node);
-                    _ = try self.expect(.close_bracket, &parent_node);
+                    _ = try self.expectMsg(.close_bracket, "expected ']' to close '['");
 
                     const old = lhs;
                     lhs = try self.allocator.create(Node);
@@ -779,7 +809,7 @@ pub const Parser = struct {
                 node.increaseEstimatedTotalItems(1);
                 size = try self.parseExpr(0, &node);
 
-                _ = try self.expect(.close_bracket, &node);
+                _ = try self.expectMsg(.close_bracket, "expected ']' to close '['");
 
                 try mods.append(self.allocator, .{
                     .array = size.?,
@@ -807,11 +837,11 @@ pub const Parser = struct {
                 const params_start = self.types.items.len;
 
                 if (self.matches(.open_paren)) {
-                    _ = try self.expect(.open_paren, &this_node);
+                    _ = try self.expect(.open_paren);
                     while (!self.matches(.close_paren)) {
                         _ = try self.parseType(&this_node);
                     }
-                    _ = try self.expect(.close_paren, &this_node);
+                    _ = try self.expectMsg(.close_paren, "expected ')' to close '('");
                 }
                 const params_end = self.types.items.len - 1;
                 break :blk Type{
@@ -831,8 +861,8 @@ pub const Parser = struct {
                 var path_node = this_node.start("Path", 0);
 
                 while (self.matches(.dot)) {
-                    _ = try self.expect(.dot, &this_node);
-                    _ = try self.expect(.identifier, &this_node);
+                    _ = try self.expect(.dot);
+                    _ = try self.expect(.identifier);
                 }
                 const pend = self.current;
                 path_node.end();
@@ -841,7 +871,7 @@ pub const Parser = struct {
                 defer args_node.end();
 
                 if (self.matches(.lt)) {
-                    _ = try self.expect(.lt, &this_node);
+                    _ = self.advance();
                     const astart: Type.Handle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
                     while (!self.matches(.gt) and !self.isAtEnd()) {
                         _ = try self.parseType(&this_node);
@@ -851,7 +881,7 @@ pub const Parser = struct {
                             break;
                         }
                     }
-                    _ = try self.expect(.gt, &this_node);
+                    _ = try self.expectMsg(.gt, "expected '>' to close '<'");
                     const aend: Type.Handle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
                     break :blk Type{
                         .named = .{
@@ -932,10 +962,10 @@ pub const Parser = struct {
         var pn = previous.start("Fn", 3);
         defer pn.end();
 
-        const start = (try self.expect(.kw_fn, &pn)).start;
+        const start = (try self.expect(.kw_fn)).start;
 
         const namei = self.current;
-        _ = try self.expect(.identifier, &pn);
+        _ = try self.expect(.identifier);
 
         const generics_start = @max(@as(isize, @intCast(self.types.items.len)) - 1, 0);
         if (self.matches(.lt)) {
@@ -948,18 +978,18 @@ pub const Parser = struct {
                 pn.increaseEstimatedTotalItems(1);
                 _ = try self.parseType(&pn);
             }
-            _ = try self.expect(.gt, &pn);
+            _ = try self.expect(.gt);
         }
         const generics_end = @max(@as(isize, @as(isize, @intCast(self.types.items.len)) - 1), 0);
 
-        _ = try self.expect(.open_paren, &pn);
+        _ = try self.expect(.open_paren);
 
         var params = try ArrayList(*Node).initCapacity(self.allocator, 4);
         var paramsn = pn.start("Params", 0);
         while (!self.isAtEnd() and !self.matches(.close_paren)) {
             const pname = self.current;
-            _ = try self.expect(.identifier, &pn);
-            _ = try self.expect(.colon, &pn);
+            _ = try self.expect(.identifier);
+            _ = try self.expect(.colon);
 
             pn.increaseEstimatedTotalItems(1);
             const pty = try self.parseType(&pn);
@@ -979,15 +1009,15 @@ pub const Parser = struct {
             };
             try params.append(self.allocator, node);
         }
-        _ = try self.expect(.close_paren, &paramsn);
+        _ = try self.expect(.close_paren);
         paramsn.end();
 
         const retty = try self.parseType(&pn);
 
-        _ = try self.expect(.open_body, &pn);
+        _ = try self.expect(.open_body);
         var blockn = pn.start("Body", 0);
         const body = try self.parseBlock(&blockn);
-        const end = try self.expect(.close_body, &pn);
+        const end = try self.expect(.close_body);
         blockn.end();
 
         const node = try self.allocator.create(Node);
@@ -1016,7 +1046,7 @@ pub const Parser = struct {
         var pn = previous.start("Let", 0);
         defer pn.end();
 
-        const start = try self.expect(.kw_let, &pn);
+        const start = try self.expect(.kw_let);
 
         var mut = false;
         if (self.matches(.kw_mut)) {
@@ -1025,7 +1055,7 @@ pub const Parser = struct {
         }
 
         const name = self.current;
-        _ = try self.expect(.identifier, &pn);
+        _ = try self.expect(.identifier);
 
         var ty: ?Type.Handle = null;
         if (self.matches(.colon)) {
@@ -1064,7 +1094,7 @@ pub const Parser = struct {
         defer ret_node.end();
 
         const start = self.current;
-        _ = try self.expect(.kw_ret, &ret_node);
+        _ = try self.expect(.kw_ret);
 
         var val: ?*Node = undefined;
         if (!self.matches(.semicolon)) {
@@ -1093,16 +1123,16 @@ pub const Parser = struct {
         defer if_node.end();
 
         const start = self.current;
-        _ = try self.expect(.kw_if, &if_node);
+        _ = try self.expect(.kw_if);
 
         const expr = try self.parseExpr(0, &if_node);
 
         var body: *Node = undefined;
         if (self.matches(.open_body)) {
             const sstart = self.current;
-            _ = try self.expect(.open_body, &if_node);
+            _ = try self.expect(.open_body);
             const block = try self.parseBlock(&if_node);
-            _ = try self.expect(.close_body, &if_node);
+            _ = try self.expect(.close_body);
             body = try self.allocator.create(Node);
             body.* = .{
                 .data = .{
@@ -1116,7 +1146,7 @@ pub const Parser = struct {
                 .file = self.tokens[sstart].file,
             };
         } else {
-            _ = try self.expect(.colon, &if_node);
+            _ = try self.expect(.colon);
             body = try self.parseStmt(&if_node);
         }
 
@@ -1126,7 +1156,7 @@ pub const Parser = struct {
             var else_node = if_node.start("Else branch", 1);
             defer else_node.end();
 
-            _ = try self.expect(.kw_else, &else_node);
+            _ = try self.expect(.kw_else);
 
             if (self.matches(.open_body)) {
                 const estart = self.advance();
@@ -1145,7 +1175,7 @@ pub const Parser = struct {
                     .file = estart.file,
                 };
 
-                _ = try self.expect(.close_body, &else_node);
+                _ = try self.expect(.close_body);
             } else {
                 else_branch = try self.parseStmt(&else_node);
             }
@@ -1175,7 +1205,7 @@ pub const Parser = struct {
         defer parent_node.end();
 
         const start = self.current;
-        _ = try self.expect(.kw_for, &parent_node);
+        _ = try self.expect(.kw_for);
 
         var vari: ?*Node = null;
         var cond: ?*Node = undefined;
@@ -1201,9 +1231,9 @@ pub const Parser = struct {
                     .end = self.peek().end,
                     .file = self.tokens[sstart].file,
                 };
-                _ = try self.expect(.close_body, &parent_node);
+                _ = try self.expect(.close_body);
             } else {
-                _ = try self.expect(.colon, &parent_node);
+                _ = try self.expect(.colon);
                 body = try self.parseStmt(&parent_node);
             }
             node.* = Node{
@@ -1246,7 +1276,7 @@ pub const Parser = struct {
                     .file = self.tokens[sstart].file,
                 };
             } else {
-                _ = try self.expect(.colon, &parent_node);
+                _ = try self.expect(.colon);
                 body = try self.parseStmt(&parent_node);
             }
 
@@ -1272,14 +1302,14 @@ pub const Parser = struct {
         if (self.matches(.kw_let)) {
             vari = try self.parseLet(&parent_node);
         }
-        _ = try self.expect(.semicolon, &parent_node);
+        _ = try self.expect(.semicolon);
 
         if (self.matches(.semicolon)) {
             cond = null;
         } else {
             cond = try self.parseExpr(0, &parent_node);
         }
-        _ = try self.expect(.semicolon, &parent_node);
+        _ = try self.expect(.semicolon);
 
         if (self.matches(.colon) or self.matches(.open_body)) {
             incr = null;
@@ -1290,7 +1320,7 @@ pub const Parser = struct {
         var body: *Node = undefined;
         if (self.matches(.open_body)) {
             const sstart = self.current;
-            _ = try self.expect(.open_body, &parent_node);
+            _ = try self.expect(.open_body);
             body = try self.allocator.create(Node);
             body.* = .{
                 .data = .{
@@ -1303,9 +1333,9 @@ pub const Parser = struct {
                 .end = self.peek().end,
                 .file = self.tokens[sstart].file,
             };
-            _ = try self.expect(.close_body, &parent_node);
+            _ = try self.expect(.close_body);
         } else {
-            _ = try self.expect(.colon, &parent_node);
+            _ = try self.expect(.colon);
             body = try self.parseStmt(&parent_node);
         }
         node.* = Node{
@@ -1330,19 +1360,19 @@ pub const Parser = struct {
         defer pn.end();
 
         const start = self.current;
-        _ = try self.expect(.kw_struct, &pn);
+        _ = try self.expect(.kw_struct);
 
         const name = self.current;
-        _ = try self.expect(.identifier, &pn);
+        _ = try self.expect(.identifier);
 
-        _ = try self.expect(.open_body, &pn);
+        _ = try self.expect(.open_body);
         var fields = try ArrayList(*Node).initCapacity(self.allocator, 5);
         while (!self.isAtEnd() and !self.matches(.close_body)) {
             pn.increaseEstimatedTotalItems(1);
 
             const fname = self.current;
-            _ = try self.expect(.identifier, &pn);
-            _ = try self.expect(.colon, &pn);
+            _ = try self.expect(.identifier);
+            _ = try self.expect(.colon);
             const ftype = try self.parseType(&pn);
 
             const node = try self.allocator.create(Node);
@@ -1366,7 +1396,7 @@ pub const Parser = struct {
                 break;
             }
         }
-        _ = try self.expect(.close_body, &pn);
+        _ = try self.expect(.close_body);
 
         const node = try self.allocator.create(Node);
         node.* = Node{
@@ -1389,7 +1419,7 @@ pub const Parser = struct {
         defer this_node.end();
 
         const start = self.current;
-        _ = try self.expect(.kw_pub, &this_node);
+        _ = try self.expect(.kw_pub);
 
         const old_root = self.root_node;
         self.root_node = &this_node;

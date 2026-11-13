@@ -78,6 +78,7 @@ const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
 const parse = @import("parse.zig");
 const sema = @import("sema.zig");
+const codegen = @import("_codegen.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
 
@@ -146,6 +147,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         writer,
         tokens,
         &file_table,
+        0,
         &parser_progress,
     );
     var ast = parser.run() catch std.process.exit(1);
