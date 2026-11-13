@@ -11,7 +11,10 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
         const child_indent = indent + 1;
 
         switch (node.tag) {
-            .integer, .string, .identifier => {
+            .integer,
+            .string,
+            .identifier,
+            => {
                 try printIndent(child_indent, writer);
                 try writer.print("token index: {}\n", .{node.data.token});
             },
@@ -79,7 +82,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             .block => {
                 try printAst(node.data.block.body, child_indent, writer);
             },
-            .let_stmt => {
+            .let_stmt, .let_mut_stmt => {
                 try printIndent(child_indent, writer);
                 try writer.print(
                     "name index: {}",

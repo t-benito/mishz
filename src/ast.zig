@@ -45,6 +45,7 @@ pub const Tag = enum {
     field_init,
     block,
     let_stmt,
+    let_mut_stmt,
     fn_stmt,
     param,
     ret_stmt,
@@ -98,7 +99,6 @@ pub const Data = union {
     },
     let_stmt: struct {
         ty: ?Type.Handle,
-        mut: bool,
         name: Token.Handle,
         val: ?*Node,
     },
@@ -137,6 +137,8 @@ pub const Data = union {
     struct_field: struct {
         name: Token.Handle,
         type: Type.Handle,
+        @"pub": bool,
+        mut: bool,
     },
     pub_stmt: struct {
         stmt: *Node,

@@ -95,11 +95,12 @@ pub const Parser = struct {
             return t;
         }
         const fmt = try self.allocator.print(
-            "expected '{s}', found '{s}' ({s})",
+            "expected '{s}', found '{s}'",
             .{
                 describeKind(kind),
-                self.file_table.spanStr(t.file, t.start, t.end),
-                @tagName(t.kind),
+                describeKind(t.kind),
+                //self.file_table.spanStr(t.file, t.start, t.end),
+                //@tagName(t.kind),
             },
         );
         self.current -= 1;
@@ -123,11 +124,12 @@ pub const Parser = struct {
         }
         self.current -= 1;
         const fmt = try self.allocator.print(
-            "{s}, found '{s}' ({s})", // TODO: maybe not keep the tag name?
+            "{s}, found '{s}'",
             .{
                 msg,
-                self.file_table.spanStr(t.file, t.start, t.end),
-                @tagName(t.kind),
+                describeKind(t.kind),
+                //self.file_table.spanStr(t.file, t.start, t.end),
+                //@tagName(t.kind),
             },
         );
         try self.logger.add(self.allocator, Error{
@@ -171,6 +173,8 @@ pub const Parser = struct {
             .close_body => "}",
             .open_bracket => "[",
             .close_bracket => "]",
+            .identifier => "<identifier>",
+            .number_literal => "<number>",
             .kw_void => "void",
             .kw_i8 => "i8",
             .kw_i16 => "i16",
@@ -182,19 +186,20 @@ pub const Parser = struct {
             .kw_u64 => "u64",
             .kw_f32 => "f32",
             .kw_f64 => "f64",
-            .kw_fn => "fn",
-            .kw_let => "let",
-            .kw_mut => "mut",
-            .kw_ret => "ret",
-            .kw_if => "if",
-            .kw_and => "and",
-            .kw_or => "or",
-            .kw_for => "for",
-            .kw_pub => "pub",
-            .kw_struct => "struct",
-            .kw_as => "as",
-            .kw_import => "import",
-            .kw_impl => "impl",
+            .kw_fn,
+            .kw_let,
+            .kw_mut,
+            .kw_ret,
+            .kw_if,
+            .kw_and,
+            .kw_for,
+            .kw_pub,
+            .kw_struct,
+            .kw_as,
+            .kw_import,
+            .kw_impl,
+            .kw_or,
+            => "<keyword>",
             else => @tagName(kind),
         };
     }
@@ -222,7 +227,7 @@ pub const Parser = struct {
     }
 
     pub fn run(self: *Parser) !Ast {
-        var nodes = try ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 12);
+        var nodes = try ArrayList(*Node).initCapacity(self.allocator, self.tokens.len / 28);
         while (!self.isAtEnd()) {
             const top = self.parseTop() catch {
                 self.syncErr();
@@ -274,10 +279,10 @@ pub const Parser = struct {
                     .end = self.next().end,
                     .file = found_top.file,
                     .message = try self.allocator.print(
-                        "expected a top-level statement ('fn', 'let', 'struct' or 'pub'), found '{s}' ({s})",
+                        "expected a top-level statement ('fn', 'let', 'struct' or 'pub'), found '{s}'",
                         .{
-                            self.file_table.spanStr(found_top.file, found_top.start, found_top.end),
-                            @tagName(found_top.kind),
+                            describeKind(found_top.kind),
+                            //self.file_table.spanStr(found_top.file, found_top.start, found_top.end),
                         },
                     ),
                 });
@@ -487,10 +492,10 @@ pub const Parser = struct {
                     .end = lhs_t.end,
                     .file = lhs_t.file,
                     .message = try self.allocator.print(
-                        "expected an expression, found '{s}' ({s})",
+                        "expected an expression, found '{s}'",
                         .{
-                            self.file_table.spanStr(lhs_t.file, lhs_t.start, lhs_t.end),
-                            @tagName(lhs_t.kind),
+                            describeKind(lhs_t.kind),
+                            //self.file_table.spanStr(lhs_t.file, lhs_t.start, lhs_t.end),
                         },
                     ),
                 });
@@ -591,7 +596,7 @@ pub const Parser = struct {
                         const sstart = self.current;
                         _ = try self.expect(.dot);
                         const name = self.current;
-                        _ = try self.expect(.identifier);
+                        _ = try self.expectMsg(.identifier, "expected field name");
 
                         _ = try self.expect(.assign);
                         const v = try self.parseExpr(0, &parent_node);
@@ -913,7 +918,7 @@ pub const Parser = struct {
                     .end = base_t.end,
                     .file = base_t.file,
                     .kind = .{ .ParseError = .UnexpectedTypeToken },
-                    .message = "expected type",
+                    .message = "expected type expression",
                 });
                 return error.UnexpectedTypeToken;
             },
@@ -978,7 +983,7 @@ pub const Parser = struct {
                 pn.increaseEstimatedTotalItems(1);
                 _ = try self.parseType(&pn);
             }
-            _ = try self.expect(.gt);
+            _ = try self.expectMsg(.gt, "expected '>' to close '<'");
         }
         const generics_end = @max(@as(isize, @as(isize, @intCast(self.types.items.len)) - 1), 0);
 
@@ -988,8 +993,8 @@ pub const Parser = struct {
         var paramsn = pn.start("Params", 0);
         while (!self.isAtEnd() and !self.matches(.close_paren)) {
             const pname = self.current;
-            _ = try self.expect(.identifier);
-            _ = try self.expect(.colon);
+            _ = try self.expectMsg(.identifier, "expected parameter name");
+            _ = try self.expectMsg(.colon, "expected ':' before parameter type");
 
             pn.increaseEstimatedTotalItems(1);
             const pty = try self.parseType(&pn);
@@ -1076,11 +1081,10 @@ pub const Parser = struct {
             .start = start.start,
             .end = self.peek().end,
             .file = start.file,
-            .tag = .let_stmt,
+            .tag = if (mut) .let_mut_stmt else .let_stmt,
             .data = .{
                 .let_stmt = .{
                     .name = name,
-                    .mut = mut,
                     .ty = ty,
                     .val = val,
                 },
@@ -1130,9 +1134,11 @@ pub const Parser = struct {
         var body: *Node = undefined;
         if (self.matches(.open_body)) {
             const sstart = self.current;
-            _ = try self.expect(.open_body);
+            _ = self.advance();
+
             const block = try self.parseBlock(&if_node);
             _ = try self.expect(.close_body);
+
             body = try self.allocator.create(Node);
             body.* = .{
                 .data = .{
@@ -1146,7 +1152,7 @@ pub const Parser = struct {
                 .file = self.tokens[sstart].file,
             };
         } else {
-            _ = try self.expect(.colon);
+            _ = try self.expectMsg(.colon, "expected ':' or '{' to begin if statement");
             body = try self.parseStmt(&if_node);
         }
 
@@ -1155,8 +1161,7 @@ pub const Parser = struct {
             if_node.increaseEstimatedTotalItems(1);
             var else_node = if_node.start("Else branch", 1);
             defer else_node.end();
-
-            _ = try self.expect(.kw_else);
+            _ = self.advance();
 
             if (self.matches(.open_body)) {
                 const estart = self.advance();
@@ -1233,7 +1238,7 @@ pub const Parser = struct {
                 };
                 _ = try self.expect(.close_body);
             } else {
-                _ = try self.expect(.colon);
+                _ = try self.expectMsg(.colon, "expected ':' or '{' to begin for statement");
                 body = try self.parseStmt(&parent_node);
             }
             node.* = Node{
@@ -1371,8 +1376,21 @@ pub const Parser = struct {
             pn.increaseEstimatedTotalItems(1);
 
             const fname = self.current;
-            _ = try self.expect(.identifier);
-            _ = try self.expect(.colon);
+
+            var @"pub" = false;
+            if (self.matches(.kw_pub)) {
+                _ = self.advance();
+                @"pub" = true;
+            }
+
+            var mut = false;
+            if (self.matches(.kw_mut)) {
+                _ = self.advance();
+                mut = true;
+            }
+
+            _ = try self.expectMsg(.identifier, "expected field name");
+            _ = try self.expectMsg(.colon, "expected ':' before field type");
             const ftype = try self.parseType(&pn);
 
             const node = try self.allocator.create(Node);
@@ -1385,6 +1403,8 @@ pub const Parser = struct {
                     .struct_field = .{
                         .name = fname,
                         .type = ftype,
+                        .@"pub" = @"pub",
+                        .mut = mut,
                     },
                 },
             };
@@ -1435,7 +1455,6 @@ pub const Parser = struct {
             });
             return error.PubTwice;
         }
-
         self.root_node = old_root;
 
         const node = try self.allocator.create(Node);

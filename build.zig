@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const options = b.addOptions();
-    options.addOption([]const u8, "version", "0.0.2yb");
+    options.addOption([]const u8, "version", "0.0.2yc");
 
     const exe = b.addExecutable(.{
         .name = "mishz",
