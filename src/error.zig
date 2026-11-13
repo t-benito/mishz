@@ -28,6 +28,7 @@ pub const Error = struct {
     start: usize,
     end: usize,
     note: ?Note = null,
+    help: ?[]const u8 = null,
 };
 
 const RED = "\x1b[1;31m";
@@ -42,7 +43,7 @@ pub const ErrorLogger = struct {
 
     pub fn init(file_table: *FileTable) ErrorLogger {
         return .{
-            .errors = std.ArrayList(Error).empty,
+            .errors = .empty,
             .file_table = file_table,
         };
     }
@@ -51,7 +52,7 @@ pub const ErrorLogger = struct {
         try self.errors.append(allocator, err);
     }
 
-    fn kindName(allocator: std.mem.Allocator, kind: ErrorType) []const u8 {
+    fn writeErr(writer: *std.Io.Writer, kind: ErrorType) !void {
         const _1: u16 = @intCast(@backingInt(kind));
         const _2: u16 = @intCast(switch (kind) {
             .LexError => |e| @backingInt(e),
@@ -59,7 +60,7 @@ pub const ErrorLogger = struct {
             .TypeError => |e| @backingInt(e),
         });
 
-        return allocator.print("E{d}", .{_1 * 1000 + _2}) catch "E";
+        try writer.print("E{d}", .{_1 * 1000 + _2});
     }
 
     pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator, writer: *std.Io.Writer) !bool {
@@ -76,11 +77,11 @@ pub const ErrorLogger = struct {
                 writer,
                 source,
                 path,
-                kindName(allocator, err.kind),
                 err.message,
                 err.start,
                 err.end,
                 false,
+                err.kind,
             ) catch {
                 try writer.print("{s}error{s}: {s} (could not render snippet)\n", .{ RED, RESET, err.message });
             };
@@ -91,11 +92,11 @@ pub const ErrorLogger = struct {
                     writer,
                     nsource,
                     npath,
-                    "note",
                     n.message,
                     n.start,
                     n.end,
                     true,
+                    null,
                 ) catch {};
             }
         }
@@ -108,11 +109,11 @@ pub const ErrorLogger = struct {
         writer: *std.Io.Writer,
         source: []const u8,
         path: []const u8,
-        label: []const u8,
         message: []const u8,
         start: usize,
         end: usize,
         is_note: bool,
+        err: ?ErrorType,
     ) !void {
         const s = @min(start, source.len);
         var e = @min(end, source.len);
@@ -133,9 +134,29 @@ pub const ErrorLogger = struct {
         if (is_note) {
             try writer.print("\n{s}note{s}: {s}\n", .{ BLUE, RESET, message });
         } else {
-            try writer.print("{s}{s}{s}:\n{s}error{s}{s}[{s}]{s}: {s}\n", .{ DIM, path, RESET, RED, RESET, DIM, label, RESET, message });
+            try writer.print(
+                "{s}{s}{s}:\n{s}error{s}{s}[",
+                .{
+                    DIM,
+                    path,
+                    RESET,
+                    // :\n
+                    RED,
+                    RESET,
+                    DIM,
+                },
+            );
+            std.debug.assert(err != null); // just in case
+            try writeErr(writer, err.?);
+            try writer.print(
+                "]{s}: {s}\n",
+                .{
+                    RESET,
+                    message,
+                },
+            );
         }
-        try writer.print(" {s}-->{s} {d}:{d}\n\n", .{ CYAN, RESET, line, col });
+        try writer.print("  {s}-->{s} {d}:{d}\n\n", .{ CYAN, RESET, line, col });
 
         var tmp = line;
         var digits: usize = 1;

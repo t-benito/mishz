@@ -1,6 +1,6 @@
 const std = @import("std");
-const parse = @import("parse.zig");
-const Node = parse.Node;
+const astt = @import("ast.zig");
+const Node = astt.Node;
 
 /// Writer must be flushed afterwards
 pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !void {
@@ -25,8 +25,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try writer.print("type id: {}\n", .{node.data.cast.ty});
                 try printAst((&node.data.cast.expr)[0..1], child_indent, writer);
             },
-            .property_access,
-            => {
+            .property_access => {
                 try printIndent(child_indent, writer);
                 try writer.print("name index: {}\n", .{node.data.property_access.name});
                 try printAst((&node.data.property_access.target)[0..1], child_indent, writer);

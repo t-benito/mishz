@@ -1,4 +1,5 @@
 const std = @import("std");
+const opts = @import("build_options");
 
 const CmdFn = *const fn (writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]const u8) anyerror!void;
 
@@ -9,8 +10,8 @@ pub const cmds =
         .{ "zen", zen },
     });
 
-const Usage =
-    \\Mish compiler v0.0.2ya
+const Usage = std.fmt.comptimePrint(
+    \\Mish compiler {s}
     \\
     \\Usage:
     \\  mishz <command> [options]
@@ -25,7 +26,7 @@ const Usage =
     \\  -a,  --ast         Print the AST instead of compiling
     \\  -ta, --typedast    Print the typechecked AST instead of compiling
     \\
-;
+, .{opts.version});
 
 pub fn usage(writer: *std.Io.Writer) !void {
     try writer.writeAll(Usage);
@@ -147,31 +148,28 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         &file_table,
         &parser_progress,
     );
-    const ast = parser.run() catch std.process.exit(1);
+    var ast = parser.run() catch std.process.exit(1);
     parser_progress.end();
 
     if (flags.ast) {
-        try astprint.printAst(ast, 0, writer);
+        try astprint.printAst(ast.nodes, 0, writer);
         try writer.flush();
         return;
     }
 
     // sema
-    var checker_progress = root_progress.start("Semantic Analysis", ast.len);
+    var checker_progress = root_progress.start("Semantic Analysis", ast.nodes.len);
     var checker = sema.Checker.init(
         arena,
         writer,
-        ast,
-        tokens,
-        parser.types,
-        &file_table,
+        &ast,
         &checker_progress,
     );
     checker.run() catch std.process.exit(1);
     checker_progress.end();
 
     if (flags.typedast) {
-        try astprint.printAst(ast, 0, writer);
+        try astprint.printAst(ast.nodes, 0, writer);
         try writer.flush();
         return;
     }

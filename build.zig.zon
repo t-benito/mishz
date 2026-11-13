@@ -5,7 +5,7 @@
     .minimum_zig_version = "0.17.1",
     .dependencies = .{
         .qbe = .{
-            .url = "git+https://github.com/ciathefed/qbe-zig#c6cb0415fc7391337a0e4d13dd8b32b40fae8aac",
+            .url = "git+https://github.com/ciathefed/qbe-zig?ref=v0.1.1#fccdf681ecafdf1908df0d42a0051676dffbd426",
             .hash = "qbe-0.1.1-SglozEO7AAAAURjUW2aV9mdSNfAqjXvU4PD2qunz60di",
         },
     },

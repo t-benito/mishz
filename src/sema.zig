@@ -1,11 +1,12 @@
 const std = @import("std");
 
-const parse = @import("parse.zig");
-const Node = parse.Node;
-const Data = parse.Data;
-const Tag = parse.Tag;
-const Type = parse.Type;
-const TypeNode = parse.TypeNode;
+const astt = @import("ast.zig");
+const Node = astt.Node;
+const Data = astt.Data;
+const Tag = astt.Tag;
+const Type = astt.Type;
+const TypeNode = astt.TypeNode;
+const Ast = astt.Ast;
 
 const lex = @import("lex.zig");
 const Token = lex.Token;
@@ -129,11 +130,13 @@ pub const TypeError = enum(u8) {
 pub const Checker = struct {
     scope_map: ScopeMap,
 
-    ast: []*Node,
-    writer: *std.Io.Writer,
-    types: std.ArrayList(TypeNode),
+    ast: *Ast,
+    types: *std.ArrayList(TypeNode),
+    nodes: []*Node,
     tokens: []Token,
     file_table: *FileTable,
+
+    writer: *std.Io.Writer,
 
     allocator: std.mem.Allocator,
     root_node: *const std.Progress.Node,
@@ -144,23 +147,21 @@ pub const Checker = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         writer: *std.Io.Writer,
-        ast: []*Node,
-        tokens: []Token,
-        types: std.ArrayList(TypeNode),
-        file_table: *FileTable,
+        ast: *Ast,
         root_node: *const std.Progress.Node,
     ) Checker {
         return .{
             .scope_map = .init(allocator),
             .ast = ast,
+            .types = &ast.types,
+            .nodes = ast.nodes,
+            .tokens = ast.tokens,
+            .file_table = ast.file_table,
             .writer = writer,
-            .types = types,
-            .tokens = tokens,
-            .file_table = file_table,
 
             .allocator = allocator,
             .root_node = root_node,
-            .logger = .init(file_table),
+            .logger = .init(ast.file_table),
 
             .string_ty_id = 0,
         };
@@ -170,11 +171,11 @@ pub const Checker = struct {
         try self.buildCache();
 
         try self.scope_map.enter();
-        for (self.ast) |node| {
+        for (self.nodes) |node| {
             self.precheckTop(node, self.root_node, false) catch {};
         }
 
-        for (self.ast) |node| {
+        for (self.nodes) |node| {
             self.checkTop(node, self.root_node) catch continue;
         }
         if (try self.logger.dump(self.allocator, self.writer)) {
@@ -183,7 +184,7 @@ pub const Checker = struct {
     }
 
     fn precheckTop(self: *Checker, node: *Node, previous: *const std.Progress.Node, public: bool) !void {
-        var parent_node = previous.start("Precheck ...", 1);
+        var parent_node = previous.start("Precheck", 1);
         defer parent_node.end();
 
         switch (node.tag) {
@@ -193,7 +194,6 @@ pub const Checker = struct {
                     self.tokens[node.data.fn_stmt.name].start,
                     self.tokens[node.data.fn_stmt.name].end,
                 );
-                parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
                 var param_types: []Type.Handle = &.{};
                 var p_types = try std.ArrayList(Type.Handle).initCapacity(
@@ -246,7 +246,7 @@ pub const Checker = struct {
             },
             .let_stmt => {},
             .pub_stmt => {
-                parent_node.setName("Precheck pub top-level statement");
+                parent_node.setName("Pub");
 
                 try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
             },
@@ -346,7 +346,6 @@ pub const Checker = struct {
                     self.tokens[let.name].start,
                     self.tokens[let.name].end,
                 );
-                parent_node.setName(try self.allocator.print("Precheck {s}", .{name}));
 
                 if (let.ty == null and let.val == null) {
                     try self.logger.add(self.allocator, .{
@@ -372,11 +371,7 @@ pub const Checker = struct {
                     ))
                 {
                     try self.scope_map.define(
-                        self.file_table.spanStr(
-                            stmt.file,
-                            self.tokens[let.name].start,
-                            self.tokens[let.name].end,
-                        ),
+                        name,
                         Symbol{
                             .kind = .vari,
                             .start = stmt.start,
