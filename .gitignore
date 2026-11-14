@@ -6,3 +6,4 @@ mish/
 _*
 README.md
 !example.msh
+*.out
