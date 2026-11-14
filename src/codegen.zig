@@ -162,7 +162,6 @@ pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {
     };
 }
 
-// TODO
 pub fn getExpr(self: *Codegen, node: *Node) !Instr {
     switch (node.tag) {
         .identifier => {
@@ -175,7 +174,18 @@ pub fn getExpr(self: *Codegen, node: *Node) !Instr {
                 .copy = .{ .temporary = name },
             };
         },
-        else => {},
+        .integer => {
+            const str_int = self.ast.file_table.spanStr(
+                node.file,
+                node.start,
+                node.end,
+            );
+            const int = try std.fmt.parseInt(i64, str_int, 0);
+            return .{
+                .copy = .{ .@"const" = @bitCast(int) },
+            };
+        },
+        else => unreachable, // TODO
     }
     return .{ .copy = .{ .@"const" = 1 }};
 }

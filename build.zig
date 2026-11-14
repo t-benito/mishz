@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const options = b.addOptions();
-    options.addOption([]const u8, "version", "0.0.2yc");
+    options.addOption([]const u8, "version", "0.0.2ye");
 
     const exe = b.addExecutable(.{
         .name = "mishz",
@@ -33,15 +33,15 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("qbe", qbe.module("qbe"));
 
-    const qbe_build = b.dependency("qbe-build", .{});
+    const qbe_root = b.path("qbe/qbe");
     const qbe_bmod = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    qbe_bmod.addIncludePath(qbe_build.path(""));
+    qbe_bmod.addIncludePath(qbe_root.path(b, ""));
     qbe_bmod.addCSourceFiles(.{
-        .root = qbe_build.path(""),
+        .root = qbe_root.path(b, ""),
         .files = &.{
             "main.c",       "util.c",       "parse.c",      "abi.c",        "cfg.c",
             "mem.c",        "ssa.c",        "alias.c",      "load.c",       "copy.c",

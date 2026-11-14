@@ -200,11 +200,13 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     var in_path: [:0]const u8 = undefined;
     var end_at_qbe = false;
+    var close_f = true;
 
     if (flags.@"emit-qbe") |out| {
         end_at_qbe = true;
         if (std.mem.eql(u8, out, "-")) {
             in_file = std.Io.File.stdout();
+            close_f = false;
         } else {
             in_file = try std.Io.Dir.cwd().createFile(io, out, .{});
 
@@ -219,8 +221,6 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         path_buf[len] = 0;
         in_path = path_buf[0..len :0];
     }
-    defer in_file.close(io);
-
     var in_buf: [4096]u8 = undefined;
     var in_file_writer = in_file.writer(io, &in_buf);
     const in_writer = &in_file_writer.interface;
@@ -231,12 +231,10 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     codegen_progress.end();
 
     if (end_at_qbe) {
+        if (close_f)
+            in_file.close(io);
         return;
     }
-    defer std.Io.Dir.cwd().deleteFile(io, in_path) catch {
-        writer.writeAll("couldnt delete qbe il file")catch{};
-        writer.flush()catch{};
-    };
 
     const compileSsa = @import("qbe_shim.zig").compileSsa;
 
@@ -257,6 +255,12 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
             "comp.out",
         }), 0);
     }
+
+    in_file.close(io);
+    defer std.Io.Dir.deleteFileAbsolute(io, in_path) catch |err| {
+        writer.print("couldnt delete temp IL: {s}\n", .{@errorName(err)}) catch {};
+        writer.flush() catch {};
+    };
 
     try compileSsa(in_path, out_path);
 }
