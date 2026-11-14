@@ -1,3 +1,7 @@
+const std = @import("std");
+const ArrayList = std.ArrayList;
+const ProgNode = std.Progress.Node;
+
 const qbe = @import("qbe");
 const Fn = qbe.Function;
 const Block = qbe.Block;
@@ -6,20 +10,17 @@ const Linkage = qbe.Linkage;
 const Arg = qbe.Argument;
 const Value = qbe.Value;
 const Stmt = qbe.Statement;
-
-const std = @import("std");
-const ArrayList = std.ArrayList;
-const ProgNode = std.Progress.Node;
+const Instr = qbe.Instr;
 
 const a = @import("ast.zig");
 const Ast = a.Ast;
 const Node = a.Node;
 const Type = a.Type;
 const TypeNode = a.TypeNode;
-const Token = @import("lex.zig").Token;
 const ft = @import("file_table.zig");
 const FileTable = ft.FileTable;
 const FileHandle = ft.FileHandle;
+const Token = @import("lex.zig").Token;
 
 pub const Codegen = @This();
 
@@ -54,7 +55,7 @@ pub fn run(self: *Codegen) !void {
     }
     var format_node = self.root.start("Qbe format", 0);
     try self.mod.format(self.writer);
-    // TODO: use qbe-zig-build to compile the qbe
+    try self.writer.flush();
     format_node.end();
 }
 
@@ -89,7 +90,7 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     }
 
     const name = fun.name;
-    const qbe_fn = Fn.init(
+    var qbe_fn = Fn.init(
         if (public) self.pub_link else self.priv_link,
         self.ast.file_table.spanStr(
             node.file,
@@ -101,9 +102,9 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         self.allocator,
     );
 
-    var start_block = Block.init("entry", self.allocator);
+    const start_block = try qbe_fn.addBlock("entry");
     for (fun.body) |stmt| {
-        try self.emitStmt(stmt, &start_block);
+        try self.emitStmt(stmt, start_block);
     }
 
     _ = try self.mod.addFunction(qbe_fn);
@@ -129,9 +130,9 @@ pub fn emitLet(self: *Codegen, node: *Node, block: *qbe.Block) !void {
     try block.assignInstr(
         v,
         self.qbeType(let.ty.?),
-        //if (let.val) |val|
-        //self.getExpr(val)
-        //else // TODO: FOR NOW!! temporary
+        if (let.val) |val|
+            try self.getExpr(val)
+        else
         .{
             .copy = .{
                 .@"const" = 0,
@@ -155,4 +156,22 @@ pub fn qbeType(self: *Codegen, ty: Type.Handle) qbe.Type {
         .void, .null => .zero,
         else => unreachable, // TODO
     };
+}
+
+// TODO
+pub fn getExpr(self: *Codegen, node: *Node) !Instr {
+    switch (node.tag) {
+        .identifier => {
+            const name = self.ast.file_table.spanStr(
+                node.file,
+                node.start,
+                node.end,
+            );
+            return .{
+                .copy = .{ .temporary = name },
+            };
+        },
+        else => {},
+    }
+    return .{ .copy = .{ .@"const" = 1 }};
 }

@@ -224,7 +224,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     defer in_file.close(io);
 
     var in_buf: [4096]u8 = undefined;
-    var in_file_writer = file.writer(io, &in_buf);
+    var in_file_writer = in_file.writer(io, &in_buf);
     const in_writer = &in_file_writer.interface;
 
     var codegen_progress = root_progress.start("Codegen", ast.nodes.len);
