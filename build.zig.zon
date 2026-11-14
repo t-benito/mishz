@@ -8,6 +8,10 @@
             .url = "git+https://github.com/ciathefed/qbe-zig?ref=v0.1.1#fccdf681ecafdf1908df0d42a0051676dffbd426",
             .hash = "qbe-0.1.1-SglozEO7AAAAURjUW2aV9mdSNfAqjXvU4PD2qunz60di",
         },
+        .@"qbe-build" = .{
+            .url = "https://c9x.me/compile/release/qbe-1.3.tar.xz",
+            .hash = "N-V-__8AAF7uGQCeaBV7O8NPgHAzCbC6GpwwTGYWeiLsoLzz",
+        },
     },
     .paths = .{
         "build.zig",

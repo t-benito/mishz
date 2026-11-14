@@ -44,6 +44,7 @@ pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, root: *ProgNod
         .priv_link = .private(),
         .ast = ast,
         .root = root,
+        .current = root,
     };
 }
 
@@ -51,7 +52,7 @@ pub fn run(self: *Codegen) !void {
     for (self.ast.nodes) |node| {
         try self.emitTopLevel(node, false);
     }
-    var format_node = self.root.start("Qbe-zig format", 0);
+    var format_node = self.root.start("Qbe format", 0);
     try self.mod.format(self.writer);
     // TODO: use qbe-zig-build to compile the qbe
     format_node.end();
@@ -68,7 +69,7 @@ pub fn emitTopLevel(self: *Codegen, node: *Node, public: bool) !void {
 pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     const fun = &node.data.fn_stmt;
 
-    const args = try ArrayList(Arg).initCapacity(
+    var args = try ArrayList(Arg).initCapacity(
         self.allocator,
         fun.params.len,
     );
@@ -100,19 +101,19 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         self.allocator,
     );
 
-    const start_block = Block.init("entry");
+    var start_block = Block.init("entry", self.allocator);
     for (fun.body) |stmt| {
-        try self.emitStmt(stmt, start_block);
+        try self.emitStmt(stmt, &start_block);
     }
 
-    self.mod.addFunction(qbe_fn);
+    _ = try self.mod.addFunction(qbe_fn);
 }
 
 pub fn emitStmt(self: *Codegen, node: *Node, block: *qbe.Block) !void {
     switch (node.tag) {
         .let_stmt,
         .let_mut_stmt,
-        => self.emitLet(node, block),
+        => try self.emitLet(node, block),
         else => unreachable, // TODO
     }
 }
@@ -128,20 +129,20 @@ pub fn emitLet(self: *Codegen, node: *Node, block: *qbe.Block) !void {
     try block.assignInstr(
         v,
         self.qbeType(let.ty.?),
-        if (let.val) |val|
-            self.getExpr(val)
-        else
-            .{
-                .copy = .{
-                    .@"const" = 0,
-                },
+        //if (let.val) |val|
+        //self.getExpr(val)
+        //else // TODO: FOR NOW!! temporary
+        .{
+            .copy = .{
+                .@"const" = 0,
             },
+        },
     );
 }
 
 pub fn qbeType(self: *Codegen, ty: Type.Handle) qbe.Type {
     // TODO: aggregate types
-    return switch (self.ast.types[ty].ty) {
+    return switch (self.ast.types.items[ty].ty) {
         .i8 => .signed_byte,
         .u8 => .unsigned_byte,
         .i16 => .signed_halfword,

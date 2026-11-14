@@ -6,7 +6,7 @@ const Node = astt.Node;
 pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !void {
     for (nodes) |node| {
         try printIndent(indent, writer);
-        try writer.print("- {s} [span {}-{}]:\n", .{ @tagName(node.tag), node.start, node.end });
+        try writer.print("- {s} ({}-{}, file {}):\n", .{ @tagName(node.tag), node.start, node.end, node.file });
 
         const child_indent = indent + 1;
 

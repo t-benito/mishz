@@ -17,14 +17,16 @@ const Usage = std.fmt.comptimePrint(
     \\  mishz <command> [options]
     \\
     \\Commands:
-    \\  build <file.msh>   Compile a Mish source file
-    \\  help               Display this help message
-    \\  zen                Print the current Zen of Mish
+    \\  build <file.msh>         Compile a Mish source file
+    \\  help                     Display this help message
+    \\  zen                      Print the current Zen of Mish
     \\
     \\Build Options:
-    \\  -t,  --tokens      Print the lexed tokens instead of compiling
-    \\  -a,  --ast         Print the AST instead of compiling
-    \\  -ta, --typedast    Print the typechecked AST instead of compiling
+    \\  -t,       --tokens       Print the lexed tokens instead of compiling
+    \\  -a,        --ast         Print the AST instead of compiling
+    \\  -ta,       --typedast    Print the typechecked AST instead of compiling
+    \\ --emit-qbe, -qbe <file>   Write QBE IL to <file>.ssa
+    \\  -o,        --out <file>  Write output to <file>
     \\
 , .{opts.version});
 
@@ -54,11 +56,16 @@ const BuildFlags = struct {
     tokens: bool = false,
     ast: bool = false,
     typedast: bool = false,
-    out: ?[:0]const u8 = null,
+    @"emit-qbe": ?[]const u8 = null,
+    out: ?[]const u8 = null,
 
     pub fn parse(writer: *std.Io.Writer, args: []const [:0]const u8) !BuildFlags {
         var result = BuildFlags{};
-        for (args, 0..) |arg, i| {
+
+        var i: usize = 0;
+        while (i < args.len) {
+            const arg = args[i];
+
             if (std.mem.eql(u8, "--tokens", arg) or std.mem.eql(u8, "-t", arg)) {
                 result.tokens = true;
             } else if (std.mem.eql(u8, "--ast", arg) or std.mem.eql(u8, "-a", arg)) {
@@ -70,11 +77,20 @@ const BuildFlags = struct {
                     fail("need a path after --out or -o", writer);
                 }
                 result.out = args[i + 1];
+                i += 1; // skip over path
+            } else if (std.mem.eql(u8, "--emit-qbe", arg) or std.mem.eql(u8, "-qbe", arg)) {
+                if (i == args.len - 1) {
+                    fail("need a path after --emit-qbe or -qbe", writer);
+                }
+                result.@"emit-qbe" = args[i + 1];
+                i += 1;
             } else {
                 std.log.err("unknown build flag '{s}'", .{arg});
                 try usage(writer);
                 std.process.exit(1);
             }
+
+            i += 1;
         }
         return result;
     }
@@ -179,9 +195,72 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         try writer.flush();
         return;
     }
+
+    // codegen
+    var in_file: std.Io.File = undefined;
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var in_path: [:0]const u8 = undefined;
+    var end_at_qbe = false;
+
+    if (flags.@"emit-qbe") |out| {
+        end_at_qbe = true;
+        if (std.mem.eql(u8, out, "-")) {
+            in_file = std.Io.File.stdout();
+        } else {
+            in_file = try std.Io.Dir.cwd().createFile(io, out, .{});
+
+            const len = try in_file.realPath(io, &path_buf);
+            path_buf[len] = 0;
+            in_path = path_buf[0..len :0];
+        }
+    } else {
+        in_file = try std.Io.Dir.cwd().createFile(io, ".temp.ssa", .{});
+
+        const len = try in_file.realPath(io, &path_buf);
+        path_buf[len] = 0;
+        in_path = path_buf[0..len :0];
+    }
+    defer in_file.close(io);
+
+    var in_buf: [4096]u8 = undefined;
+    var in_file_writer = file.writer(io, &in_buf);
+    const in_writer = &in_file_writer.interface;
+
+    var codegen_progress = root_progress.start("Codegen", ast.nodes.len);
+    var gen = codegen.init(arena, in_writer, &codegen_progress, &ast);
+    try gen.run();
+    codegen_progress.end();
+
+    if (end_at_qbe) {
+        return;
+    }
+
+    const compileSsa = @import("qbe_shim.zig").compileSsa;
+
+    var out_path: [:0]const u8 = undefined;
+
+    var out_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try std.Io.Dir.cwd().realPath(io, &out_path_buf);
+    out_path_buf[len] = 0;
+
+    if (flags.out) |out| {
+        out_path = try arena.dupeSentinel(u8, try std.fs.path.join(arena, &.{
+            out_path_buf[0..len],
+            out,
+        }), 0);
+    } else {
+        out_path = try arena.dupeSentinel(u8, try std.fs.path.join(arena, &.{
+            out_path_buf[0..len],
+            "comp.out",
+        }), 0);
+    }
+
+    try compileSsa(in_path, out_path);
+    try std.Io.Dir.cwd().deleteFile(io, in_path);
 }
 
-fn fail(msg: []const u8, writer: *std.Io.Writer) void {
+fn fail(msg: []const u8, writer: *std.Io.Writer) noreturn {
     std.log.err("{s}", .{msg});
     usage(writer) catch {};
     std.process.exit(1);
