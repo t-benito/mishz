@@ -5,3 +5,4 @@ zig-pkg/
 mish/
 _*
 README.md
+!example.msh

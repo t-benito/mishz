@@ -342,20 +342,20 @@ pub const Checker = struct {
             .let_stmt,
             .let_mut_stmt,
             => {
-                const let = &stmt.data.let_stmt;
+                var let = &stmt.data.let_stmt;
                 const name = self.file_table.spanStr(
                     stmt.file,
                     self.tokens[let.name].start,
                     self.tokens[let.name].end,
                 );
 
-                if (let.ty == null and let.val == null) {
+                if (let.ty == null and (let.val == null or try self.checkExpr(let.val.?) == .null)) {
                     try self.logger.add(self.allocator, .{
                         .start = stmt.start,
                         .end = stmt.end,
                         .file = stmt.file,
                         .kind = .{ .TypeError = .NeedValOrTy },
-                        .message = "a variable needs to either have a type or a value",
+                        .message = "a variable needs to either have a type or a non-null value",
                     });
                     return error.NeedValOrTy;
                 }
@@ -364,6 +364,8 @@ pub const Checker = struct {
                     let.val.?.start,
                     let.val.?.end,
                 );
+                if (let.ty == null)
+                    let.ty = ty;
 
                 if (let.ty != null and
                     let.val != null and
@@ -372,19 +374,27 @@ pub const Checker = struct {
                         try self.checkExpr(let.val.?),
                     ))
                 {
-                    try self.scope_map.define(
-                        name,
-                        Symbol{
-                            .kind = .vari,
-                            .start = stmt.start,
-                            .end = stmt.end,
-                            .file = stmt.file,
-                            .public = true,
-                            .data = .{ .vari = ty },
-                        },
-                        &self.logger,
-                    );
+                    try self.logger.add(self.allocator, .{
+                        .start = let.val.?.start,
+                        .end = let.val.?.end,
+                        .file = stmt.file,
+                        .kind = .{ .TypeError = .TypeMismatch },
+                        .message = "mismatched value and type"
+                    });
+                    return error.TypeMismatch;
                 }
+                 try self.scope_map.define(
+                    name,
+                    Symbol{
+                        .kind = .vari,
+                        .start = stmt.start,
+                        .end = stmt.end,
+                        .file = stmt.file,
+                        .public = true,
+                        .data = .{ .vari = ty },
+                    },
+                    &self.logger,
+                 );
             },
             .ret_stmt => {
                 parent_node.setName("Return");
@@ -398,8 +408,7 @@ pub const Checker = struct {
                             .end = val.end,
                             .file = val.file,
                             .kind = .{ .TypeError = TypeError.TypeMismatch },
-                            .message = try std.fmt.allocPrint(
-                                self.allocator,
+                            .message = try self.allocator.print(
                                 "return type '{s}' mismatched with expected type '{s}'",
                                 .{ @tagName(returned), @tagName(ret_ty) },
                             ),
