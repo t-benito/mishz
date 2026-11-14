@@ -1060,7 +1060,7 @@ pub const Parser = struct {
         }
 
         const name = self.current;
-        _ = try self.expect(.identifier);
+        _ = try self.expectMsg(.identifier, "expected variable name");
 
         var ty: ?Type.Handle = null;
         if (self.matches(.colon)) {

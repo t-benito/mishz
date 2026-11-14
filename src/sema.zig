@@ -339,7 +339,9 @@ pub const Checker = struct {
         var parent_node = previous.start("Statement", 0);
         defer parent_node.end();
         switch (stmt.tag) {
-            .let_stmt => {
+            .let_stmt,
+            .let_mut_stmt,
+            => {
                 const let = &stmt.data.let_stmt;
                 const name = self.file_table.spanStr(
                     stmt.file,

@@ -54,16 +54,22 @@ const BuildFlags = struct {
     tokens: bool = false,
     ast: bool = false,
     typedast: bool = false,
+    out: ?[:0]const u8 = null,
 
     pub fn parse(writer: *std.Io.Writer, args: []const [:0]const u8) !BuildFlags {
         var result = BuildFlags{};
-        for (args) |arg| {
+        for (args, 0..) |arg, i| {
             if (std.mem.eql(u8, "--tokens", arg) or std.mem.eql(u8, "-t", arg)) {
                 result.tokens = true;
             } else if (std.mem.eql(u8, "--ast", arg) or std.mem.eql(u8, "-a", arg)) {
                 result.ast = true;
             } else if (std.mem.eql(u8, "--typedast", arg) or std.mem.eql(u8, "-ta", arg)) {
                 result.typedast = true;
+            } else if (std.mem.eql(u8, "--out", arg) or std.mem.eql(u8, "-o", arg)) {
+                if (i == args.len - 1) {
+                    fail("need a path after --out or -o", writer);
+                }
+                result.out = args[i + 1];
             } else {
                 std.log.err("unknown build flag '{s}'", .{arg});
                 try usage(writer);
@@ -78,15 +84,13 @@ const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
 const parse = @import("parse.zig");
 const sema = @import("sema.zig");
-const codegen = @import("_codegen.zig");
+const codegen = @import("codegen.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
 
 pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]const u8) !void {
     if (args.len < 3) {
-        std.log.err("too few arguments", .{});
-        try usage(writer);
-        std.process.exit(1);
+        fail("too few arguments", writer);
     }
 
     const path = args[2];
@@ -175,4 +179,10 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         try writer.flush();
         return;
     }
+}
+
+fn fail(msg: []const u8, writer: *std.Io.Writer) void {
+    std.log.err("{s}", .{msg});
+    usage(writer) catch {};
+    std.process.exit(1);
 }
