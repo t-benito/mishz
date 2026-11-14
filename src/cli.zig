@@ -74,20 +74,18 @@ const BuildFlags = struct {
                 result.typedast = true;
             } else if (std.mem.eql(u8, "--out", arg) or std.mem.eql(u8, "-o", arg)) {
                 if (i == args.len - 1) {
-                    fail("need a path after --out or -o", writer);
+                    fail("need a path after --out or -o", .{}, writer);
                 }
                 result.out = args[i + 1];
                 i += 1; // skip over path
             } else if (std.mem.eql(u8, "--emit-qbe", arg) or std.mem.eql(u8, "-qbe", arg)) {
                 if (i == args.len - 1) {
-                    fail("need a path after --emit-qbe or -qbe", writer);
+                    fail("need a path after --emit-qbe or -qbe", .{}, writer);
                 }
                 result.@"emit-qbe" = args[i + 1];
                 i += 1;
             } else {
-                std.log.err("unknown build flag '{s}'", .{arg});
-                try usage(writer);
-                std.process.exit(1);
+                fail("unknown build flag '{s}'", .{arg}, writer);
             }
 
             i += 1;
@@ -106,7 +104,7 @@ const astprint = @import("astprint.zig");
 
 pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]const u8) !void {
     if (args.len < 3) {
-        fail("too few arguments", writer);
+        fail("too few arguments", .{}, writer);
     }
 
     const path = args[2];
@@ -235,6 +233,10 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     if (end_at_qbe) {
         return;
     }
+    defer std.Io.Dir.cwd().deleteFile(io, in_path) catch {
+        writer.writeAll("couldnt delete qbe il file")catch{};
+        writer.flush()catch{};
+    };
 
     const compileSsa = @import("qbe_shim.zig").compileSsa;
 
@@ -257,11 +259,12 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     }
 
     try compileSsa(in_path, out_path);
-    try std.Io.Dir.cwd().deleteFile(io, in_path);
 }
 
-fn fail(msg: []const u8, writer: *std.Io.Writer) noreturn {
-    std.log.err("{s}", .{msg});
+fn fail(comptime fmt: []const u8, args: anytype, writer: *std.Io.Writer) noreturn {
+    writer.writeAll("\x1b[1m\x1b[31merror:\x1b0m") catch {};
+    writer.print(fmt ++ "\n", args) catch {};
+
     usage(writer) catch {};
     std.process.exit(1);
 }

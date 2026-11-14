@@ -53,7 +53,7 @@ pub fn run(self: *Codegen) !void {
     for (self.ast.nodes) |node| {
         try self.emitTopLevel(node, false);
     }
-    var format_node = self.root.start("Qbe format", 0);
+    var format_node = self.root.start("Qbe Format", 0);
     try self.mod.format(self.writer);
     try self.writer.flush();
     format_node.end();
@@ -77,7 +77,7 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     for (fun.params) |param| {
         const pdata = &param.data.param;
         const arg = Arg{
-            .ty = self.qbeType(pdata.ty),
+            .ty = self.qbeType(pdata.ty).?,
             .val = .{
                 .temporary = self.ast.file_table.spanStr(
                     param.file,
@@ -90,6 +90,8 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     }
 
     const name = fun.name;
+    const qbe_type = self.qbeType(fun.returns);
+
     var qbe_fn = Fn.init(
         if (public) self.pub_link else self.priv_link,
         self.ast.file_table.spanStr(
@@ -98,7 +100,7 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
             self.ast.tokens[name].end,
         ),
         try args.toOwnedSlice(self.allocator),
-        self.qbeType(fun.returns),
+        qbe_type,
         self.allocator,
     );
 
@@ -106,6 +108,8 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     for (fun.body) |stmt| {
         try self.emitStmt(stmt, start_block);
     }
+    if (qbe_type == null)
+        try start_block.addInstr(.{ .ret = null });
 
     _ = try self.mod.addFunction(qbe_fn);
 }
@@ -129,7 +133,7 @@ pub fn emitLet(self: *Codegen, node: *Node, block: *qbe.Block) !void {
     const v = Value{ .temporary = name };
     try block.assignInstr(
         v,
-        self.qbeType(let.ty.?),
+        self.qbeType(let.ty.?).?,
         if (let.val) |val|
             try self.getExpr(val)
         else
@@ -141,7 +145,7 @@ pub fn emitLet(self: *Codegen, node: *Node, block: *qbe.Block) !void {
     );
 }
 
-pub fn qbeType(self: *Codegen, ty: Type.Handle) qbe.Type {
+pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {
     // TODO: aggregate types
     return switch (self.ast.types.items[ty].ty) {
         .i8 => .signed_byte,
@@ -153,7 +157,7 @@ pub fn qbeType(self: *Codegen, ty: Type.Handle) qbe.Type {
         .f32 => .single,
         .f64 => .double,
         .ptr => self.pointer_width,
-        .void, .null => .zero,
+        .void, .null => null,
         else => unreachable, // TODO
     };
 }
