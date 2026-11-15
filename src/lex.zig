@@ -5,12 +5,13 @@ const ErrorLogger = err.ErrorLogger;
 const ft = @import("file_table.zig");
 const FileTable = ft.FileTable;
 const FileHandle = ft.FileHandle;
+const SourceHandle = @import("ast.zig").SourceHandle;
 
 pub const Token = struct {
     pub const Handle = u32;
 
-    start: usize,
-    end: usize,
+    start: SourceHandle,
+    end: SourceHandle,
     kind: Kind,
     file: FileHandle,
 
@@ -135,6 +136,7 @@ pub const LexError = enum(u8) {
     UnclosedStringLiteral = 2,
     UnclosedStringIdentifier = 3,
     InvalidEscape = 4,
+    ReservedUsage = 5,
 };
 
 pub const Lexer = struct {
@@ -143,9 +145,9 @@ pub const Lexer = struct {
 
     source: []const u8,
 
-    current: usize,
-    col: usize,
-    row: usize,
+    current: SourceHandle,
+    col: SourceHandle,
+    row: SourceHandle,
 
     logger: ErrorLogger,
 
@@ -198,9 +200,7 @@ pub const Lexer = struct {
             runs += 1;
 
             progress.setEstimatedTotalItems(@max(self.source.len / 7, runs + 1));
-            // this is to increase the count shown in the progress bar
-            run_progress.end();
-            run_progress = progress.start("Running", 0);
+            progress.setCompletedItems(runs);
 
             while (!self.isAtEnd() and std.ascii.isWhitespace(self.peek()))
                 _ = self.advance();
@@ -255,6 +255,19 @@ pub const Lexer = struct {
                         .file = self.file_id,
                     });
                     continue;
+                }
+                if (std.mem.startsWith(
+                    u8,
+                    self.file_table.spanStr(self.file_id, start + 2, self.current - 1),
+                    "___.",
+                )) {
+                    try self.logger.add(allocator, .{
+                        .kind = .{ .LexError = .ReservedUsage },
+                        .message = "identifiers starting with '___.' are reserved for compiler internals",
+                        .start = start,
+                        .end = self.current,
+                        .file = self.file_id,
+                    });
                 }
 
                 try tokens.append(allocator, .{
@@ -365,9 +378,9 @@ pub const Lexer = struct {
             });
         }
         try tokens.append(allocator, .{
-            .start = self.source.len - 1,
-            .end = self.source.len - 1,
-            .file = self.file_id,
+            .start = @intCast(self.source.len - 1),
+            .end = @intCast(self.source.len - 1),
+            .file = @intCast(self.file_id),
             .kind = .eof,
         });
 

@@ -142,7 +142,9 @@ pub const Checker = struct {
     root_node: *const std.Progress.Node,
     logger: err.ErrorLogger,
 
-    string_ty_id: Type.Handle,
+    string_ty_id: Type.Handle = 0,
+    i32_ty_id: Type.Handle = 0,
+    bool_ty_id: Type.Handle = 0,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -162,8 +164,6 @@ pub const Checker = struct {
             .allocator = allocator,
             .root_node = root_node,
             .logger = .init(ast.file_table),
-
-            .string_ty_id = 0,
         };
     }
 
@@ -201,7 +201,7 @@ pub const Checker = struct {
                     node.data.fn_stmt.params.len,
                 );
                 for (node.data.fn_stmt.params) |param| {
-                    try p_types.append(self.allocator, param.data.param.ty);
+                    try p_types.append(self.allocator, param.ty.?);
                 }
                 param_types = try p_types.toOwnedSlice(self.allocator);
 
@@ -216,7 +216,7 @@ pub const Checker = struct {
                         .data = .{
                             .func = .{
                                 .params = param_types,
-                                .returns = node.data.fn_stmt.returns,
+                                .returns = node.ty.?,
                             },
                         },
                     },
@@ -237,7 +237,7 @@ pub const Checker = struct {
                             .file = param.file,
                             .public = true,
                             .data = .{
-                                .param = param.data.param.ty,
+                                .param = param.ty.?,
                             },
                         },
                         &self.logger,
@@ -261,18 +261,40 @@ pub const Checker = struct {
         for (self.types.items, 0..) |t, idx| {
             switch (t.ty) {
                 .u8 => {
-                    u8_type_id = idx;
+                    u8_type_id = @intCast(idx);
                     break;
+                },
+                .i32 => {
+                    self.i32_ty_id = @intCast(idx);
+                },
+                .bool => {
+                    self.bool_ty_id = @intCast(idx);
                 },
                 else => {},
             }
+        }
+        if (self.i32_ty_id == 0) {
+            self.i32_ty_id = @intCast(self.types.items.len);
+            try self.types.append(self.allocator, TypeNode{
+                .ty = .i32,
+                .start = 0,
+                .end = 0,
+            });
+        }
+        if (self.bool_ty_id == 0) {
+            self.bool_ty_id = @intCast(self.types.items.len);
+            try self.types.append(self.allocator, TypeNode{
+                .ty = .bool,
+                .start = 0,
+                .end = 0,
+            });
         }
         if (u8_type_id) |u8_id| {
             for (self.types.items, 0..) |t, idx| {
                 switch (t.ty) {
                     .slice => |inner| {
                         if (inner == u8_id) {
-                            self.string_ty_id = idx;
+                            self.string_ty_id = @intCast(idx);
                             break;
                         }
                     },
@@ -280,7 +302,7 @@ pub const Checker = struct {
                 }
             }
             if (self.string_ty_id == 0) {
-                self.string_ty_id = self.types.items.len;
+                self.string_ty_id = @intCast(self.types.items.len);
                 try self.types.append(self.allocator, TypeNode{
                     .ty = .{ .slice = u8_id },
                     .start = 0,
@@ -296,11 +318,11 @@ pub const Checker = struct {
             });
             const slice_id = self.types.items.len;
             try self.types.append(self.allocator, TypeNode{
-                .ty = .{ .slice = u8_id },
+                .ty = .{ .slice = @intCast(u8_id) },
                 .start = 0,
                 .end = 0,
             });
-            self.string_ty_id = slice_id;
+            self.string_ty_id = @intCast(slice_id);
         }
     }
 
@@ -319,7 +341,7 @@ pub const Checker = struct {
                 for (node.data.fn_stmt.body) |stmt| {
                     try self.checkStmt(
                         stmt,
-                        self.types.items[node.data.fn_stmt.returns].ty,
+                        self.types.items[node.ty.?].ty,
                         node,
                         &parent_node,
                     );
@@ -342,14 +364,14 @@ pub const Checker = struct {
             .let_stmt,
             .let_mut_stmt,
             => {
-                var let = &stmt.data.let_stmt;
+                const let = &stmt.data.let_stmt;
                 const name = self.file_table.spanStr(
                     stmt.file,
                     self.tokens[let.name].start,
                     self.tokens[let.name].end,
                 );
 
-                if (let.ty == null and (let.val == null or try self.checkExpr(let.val.?) == .null)) {
+                if (stmt.ty == null and (let.val == null or try self.checkExpr(let.val.?) == .null)) {
                     try self.logger.add(self.allocator, .{
                         .start = stmt.start,
                         .end = stmt.end,
@@ -357,33 +379,37 @@ pub const Checker = struct {
                         .kind = .{ .TypeError = .NeedValOrTy },
                         .message = "a variable needs to either have a type or a non-null value",
                     });
-                    return error.NeedValOrTy;
                 }
-                const ty = let.ty orelse try self.getOrAddTyId(
+
+                const ty = stmt.ty orelse try self.getOrAddTyId(
                     try self.checkExpr(let.val.?),
                     let.val.?.start,
                     let.val.?.end,
                 );
-                if (let.ty == null)
-                    let.ty = ty;
+                if (stmt.ty == null)
+                    stmt.ty = ty;
 
-                if (let.ty != null and
+                if (stmt.ty != null and
                     let.val != null and
                     !isTyEql(
-                        self.types.items[let.ty.?].ty,
+                        self.types.items[stmt.ty.?].ty,
                         try self.checkExpr(let.val.?),
                     ))
                 {
-                    try self.logger.add(self.allocator, .{
-                        .start = let.val.?.start,
-                        .end = let.val.?.end,
-                        .file = stmt.file,
-                        .kind = .{ .TypeError = .TypeMismatch },
-                        .message = "mismatched value and type"
-                    });
+                    const st_ty_node = self.types.items[stmt.ty.?];
+                    try self.logger.add(
+                        self.allocator,
+                        .{
+                            .start = st_ty_node.start,
+                            .end = st_ty_node.end,
+                            .file = stmt.file,
+                            .kind = .{ .TypeError = .TypeMismatch },
+                            .message = "mismatched value and type",
+                        },
+                    );
                     return error.TypeMismatch;
                 }
-                 try self.scope_map.define(
+                try self.scope_map.define(
                     name,
                     Symbol{
                         .kind = .vari,
@@ -394,7 +420,7 @@ pub const Checker = struct {
                         .data = .{ .vari = ty },
                     },
                     &self.logger,
-                 );
+                );
             },
             .ret_stmt => {
                 parent_node.setName("Return");
@@ -413,8 +439,8 @@ pub const Checker = struct {
                                 .{ @tagName(returned), @tagName(ret_ty) },
                             ),
                             .note = if (fn_start) |fn_stmt| Note{
-                                .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
-                                .end = self.types.items[fn_stmt.data.fn_stmt.returns].end,
+                                .start = self.types.items[fn_stmt.ty.?].start,
+                                .end = self.types.items[fn_stmt.ty.?].end,
                                 .file = val.file,
                                 .message = "return type declared here",
                             } else null,
@@ -428,8 +454,8 @@ pub const Checker = struct {
                         .kind = .{ .TypeError = .TypeMismatch },
                         .message = "expected non-void return value",
                         .note = if (fn_start) |fn_stmt| Note{
-                            .start = self.types.items[fn_stmt.data.fn_stmt.returns].start,
-                            .end = self.types.items[fn_stmt.data.fn_stmt.returns].end,
+                            .start = self.types.items[fn_stmt.ty.?].start,
+                            .end = self.types.items[fn_stmt.ty.?].end,
                             .file = stmt.file,
                             .message = "return type declared here",
                         } else null,
@@ -518,7 +544,7 @@ pub const Checker = struct {
                         });
 
                     const name = self.tokens[let.name];
-                    const ty = let.ty orelse try self.getOrAddTyId(
+                    const ty = vari.ty orelse try self.getOrAddTyId(
                         try self.checkExpr(vari.data.let_stmt.val.?),
                         let.val.?.start,
                         let.val.?.end,
@@ -572,28 +598,37 @@ pub const Checker = struct {
         for (self.types.items, 0..) |tyn, i| {
             if (!isTyEql(tyn.ty, ty))
                 continue;
-            return i;
+            return @intCast(i);
         }
         const new = self.types.items.len;
         try self.types.append(self.allocator, .{
             .ty = ty,
-            .start = start,
-            .end = end,
+            .start = @intCast(start),
+            .end = @intCast(end),
         });
-        return new;
+        return @intCast(new);
     }
 
     fn checkExpr(self: *Checker, node: *Node) !Type {
-        return switch (node.tag) {
-            .identifier => blk: {
+        switch (node.tag) {
+            .identifier => {
                 const ident_str = self.file_table.spanStr(node.file, node.start, node.end);
                 if (self.scope_map.lookup(ident_str)) |sym| {
-                    break :blk switch (sym.kind) {
-                        .vari => self.types.items[sym.data.vari].ty,
-                        .func => self.types.items[sym.data.func.returns].ty, // not sure about this... TODO(perhaps): construct a function type for the fn
-                        .param => self.types.items[sym.data.param].ty,
+                    switch (sym.kind) {
+                        .vari => {
+                            node.ty = sym.data.vari;
+                            return self.types.items[sym.data.vari].ty;
+                        },
+                        .func => {
+                            node.ty = sym.data.func.returns;
+                            return self.types.items[sym.data.func.returns].ty; // not sure about this... TODO(perhaps): construct a function type for the fn
+                        },
+                        .param => {
+                            node.ty = sym.data.param;
+                            return self.types.items[sym.data.param].ty;
+                        },
                         .strct => unreachable, // TODO
-                    };
+                    }
                 }
                 try self.logger.add(self.allocator, Error{
                     .start = node.start,
@@ -604,7 +639,7 @@ pub const Checker = struct {
                 });
                 return error.UnknownType;
             },
-            .call => blk: {
+            .call => {
                 const c = &node.data.call;
                 const callee_ident = self.file_table.spanStr(c.callee.file, c.callee.start, c.callee.end);
                 if (self.scope_map.lookup(callee_ident)) |sym| {
@@ -639,8 +674,7 @@ pub const Checker = struct {
                                         .end = arg.end,
                                         .file = arg.file,
                                         .kind = .{ .TypeError = TypeError.TypeMismatch },
-                                        .message = try std.fmt.allocPrint(
-                                            self.allocator,
+                                        .message = try self.allocator.print(
                                             "expected parameter type '{s}', found type '{s}'",
                                             .{ @tagName(expected_ty), @tagName(arg_ty) },
                                         ),
@@ -649,7 +683,7 @@ pub const Checker = struct {
                                 }
                             }
                         }
-                        break :blk self.types.items[sym.data.func.returns].ty;
+                        return self.types.items[sym.data.func.returns].ty;
                     }
                 }
                 _ = try self.checkExpr(c.callee);
@@ -661,11 +695,11 @@ pub const Checker = struct {
                     .end = c.callee.end,
                     .file = c.callee.file,
                     .kind = .{ .TypeError = TypeError.NonFunctionCall },
-                    .message = try std.fmt.allocPrint(self.allocator, "cannot call non-function '{s}'", .{callee_ident}),
+                    .message = try self.allocator.print("cannot call non-function '{s}'", .{callee_ident}),
                 });
                 return error.UnexpectedType;
             },
-            .property_access => blk: {
+            .property_access => {
                 const pa = &node.data.property_access;
                 const target_ty = try self.checkExpr(pa.target);
 
@@ -678,7 +712,7 @@ pub const Checker = struct {
                 switch (target_ty) {
                     .slice => |inner_id| {
                         if (std.mem.eql(u8, prop_name, "len")) {
-                            break :blk .u64;
+                            return .u64;
                         } else if (std.mem.eql(u8, prop_name, "ptr")) { // TODO: maybe reuse the ptr type if .ptr was already got on this
                             const ptr_type_id = self.types.items.len;
                             try self.types.append(self.allocator, TypeNode{
@@ -686,7 +720,7 @@ pub const Checker = struct {
                                 .start = node.start,
                                 .end = node.end,
                             });
-                            break :blk self.types.items[ptr_type_id].ty;
+                            return self.types.items[ptr_type_id].ty;
                         }
                         try self.logger.add(self.allocator, .{
                             .start = self.tokens[pa.name].start,
@@ -695,7 +729,7 @@ pub const Checker = struct {
                             .kind = .{ .TypeError = TypeError.UnknownSliceProperty },
                             .message = "unknown slice property, expected 'len' or 'ptr'",
                         });
-                        break :blk error.UnknownSliceProperty;
+                        return error.UnknownSliceProperty;
                     },
                     else => {},
                 }
@@ -707,9 +741,9 @@ pub const Checker = struct {
                     .kind = .{ .TypeError = TypeError.NotAMember },
                     .message = try self.allocator.print("type '{s}' has no member '{s}'", .{ @tagName(target_ty), prop_name }),
                 });
-                break :blk error.NotAMember;
+                return error.NotAMember;
             },
-            .array_access => blk: {
+            .array_access => {
                 const aa = &node.data.array_access;
                 const target_ty = try self.checkExpr(aa.target);
                 const idx_ty = try self.checkExpr(aa.value);
@@ -726,8 +760,14 @@ pub const Checker = struct {
                 }
 
                 switch (target_ty) {
-                    .slice => |inner_id| break :blk self.types.items[inner_id].ty,
-                    .array => |arr| break :blk self.types.items[arr.ty].ty,
+                    .slice => |inner_id| {
+                        node.ty = inner_id;
+                        return self.types.items[inner_id].ty;
+                    },
+                    .array => |arr| {
+                        node.ty = arr.ty;
+                        return self.types.items[arr.ty].ty;
+                    },
                     else => {
                         try self.logger.add(self.allocator, Error{
                             .start = aa.target.start,
@@ -740,9 +780,15 @@ pub const Checker = struct {
                     },
                 }
             },
-            .string => self.types.items[self.string_ty_id].ty,
-            .integer => .i32,
-            .builtin => blk: {
+            .string => {
+                node.ty = self.string_ty_id;
+                return self.types.items[self.string_ty_id].ty;
+            },
+            .integer => {
+                node.ty = self.i32_ty_id;
+                return .i32;
+            },
+            .builtin => {
                 const b = &node.data.builtin;
                 const name_str = self.file_table.spanStr(
                     self.tokens[b.name].file,
@@ -751,15 +797,18 @@ pub const Checker = struct {
                 );
                 _ = name_str;
                 // STUB:TODO
-                break :blk .void;
+                return .void;
             },
             .cast => {
                 const c = &node.data.cast;
                 _ = try self.checkExpr(c.expr);
-                return self.types.items[c.ty].ty;
+                return self.types.items[node.ty.?].ty;
             },
-            .true, .false => .bool,
-            .null => .null,
+            .true, .false => {
+                node.ty = self.bool_ty_id;
+                return .bool;
+            },
+            .null => return .null,
             .binary_op_add,
             .binary_op_div,
             .binary_op_eq,
@@ -770,7 +819,7 @@ pub const Checker = struct {
             .binary_op_mul,
             .binary_op_not_eq,
             .binary_op_sub,
-            => blk: {
+            => {
                 const lhs = try self.checkExpr(node.data.binary_op.left);
                 const rhs = try self.checkExpr(node.data.binary_op.right);
                 if (!((isNum(lhs) and isNum(rhs)) or (lhs == .bool and rhs == .bool))) {
@@ -796,9 +845,17 @@ pub const Checker = struct {
                     ),
                     null,
                 );
-                break :blk lhs;
+                // HACK !!!!
+                node.ty = @intCast(self.types.items.len);
+                try self.types.append(self.allocator, TypeNode{
+                    .ty = lhs,
+                    .start = node.start,
+                    .end = node.end,
+                });
+                // EOH
+                return lhs;
             },
-            .unary_op_not => blk: {
+            .unary_op_not => {
                 const rhs = try self.checkExpr(node.data.unary_op.right);
                 if (rhs != .bool) {
                     try self.logger.add(self.allocator, Error{
@@ -816,12 +873,13 @@ pub const Checker = struct {
                     });
                     return error.UnexpectedType;
                 }
-                break :blk rhs;
+                node.ty = self.bool_ty_id;
+                return rhs;
             },
             .unary_op_neg,
             .unary_op_decr,
             .unary_op_incr,
-            => blk: {
+            => {
                 const rhs = try self.checkExpr(node.data.unary_op.right);
                 if (!isNum(rhs)) {
                     try self.logger.add(self.allocator, Error{
@@ -843,10 +901,18 @@ pub const Checker = struct {
                     });
                     return error.UnexpectedType;
                 }
-                break :blk rhs;
+                // HACK !!!!
+                node.ty = @intCast(self.types.items.len);
+                try self.types.append(self.allocator, TypeNode{
+                    .ty = rhs,
+                    .start = node.start,
+                    .end = node.end,
+                });
+                // EOH
+                return rhs;
             },
-            else => .void,
-        };
+            else => return .void,
+        }
     }
 
     fn matchTypes(self: *Checker, lhs: Type, rhs: Type, start: usize, end: usize, file: FileHandle, message: []const u8, note: ?Note) !void {

@@ -11,6 +11,12 @@ const Arg = qbe.Argument;
 const Value = qbe.Value;
 const Stmt = qbe.Statement;
 const Instr = qbe.Instr;
+const TypeDef = qbe.TypeDef;
+
+const layoutt = @import("layout.zig");
+const Field = layoutt.Field;
+const Struct = layoutt.Struct;
+const StructDef = layoutt.Struct.Def;
 
 const a = @import("ast.zig");
 const Ast = a.Ast;
@@ -30,13 +36,17 @@ mod: Module,
 pub_link: Linkage,
 priv_link: Linkage,
 ast: *Ast,
+globals: ArrayList([]const u8),
 
 root: *ProgNode,
 current: *ProgNode,
 
 pointer_width: qbe.Type = .long,
+slice_def: ?StructDef = null,
 
-pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, root: *ProgNode, ast: *Ast) Codegen {
+temp_counter: usize = 0,
+
+pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, root: *ProgNode, ast: *Ast) !Codegen {
     return Codegen{
         .allocator = allocator,
         .writer = writer,
@@ -44,19 +54,34 @@ pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, root: *ProgNod
         .pub_link = .public(),
         .priv_link = .private(),
         .ast = ast,
+        .globals = ArrayList([]const u8).initCapacity(allocator, @divTrunc(ast.nodes.len, 2) + 1) catch ArrayList([]const u8).empty,
         .root = root,
         .current = root,
     };
 }
 
 pub fn run(self: *Codegen) !void {
+    try self.emitPre();
     for (self.ast.nodes) |node| {
         try self.emitTopLevel(node, false);
+        self.temp_counter = 0;
     }
     var format_node = self.root.start("Qbe Format", 0);
     try self.mod.format(self.writer);
     try self.writer.flush();
     format_node.end();
+}
+
+pub fn emitPre(self: *Codegen) !void {
+    self.slice_def = try .init(
+        self.allocator,
+        &self.mod,
+        "___.slice",
+        &.{
+            .{ .name = "ptr", .ty = self.pointer_width },
+            .{ .name = "len", .ty = self.pointer_width },
+        },
+    );
 }
 
 pub fn emitTopLevel(self: *Codegen, node: *Node, public: bool) !void {
@@ -75,9 +100,8 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         fun.params.len,
     );
     for (fun.params) |param| {
-        const pdata = &param.data.param;
         const arg = Arg{
-            .ty = self.qbeType(pdata.ty).?,
+            .ty = self.qbeType(param.ty.?).?,
             .val = .{
                 .temporary = self.ast.file_table.spanStr(
                     param.file,
@@ -90,9 +114,9 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     }
 
     const name = fun.name;
-    const qbe_type = self.qbeType(fun.returns);
+    const qbe_type = self.qbeType(node.ty.?);
 
-    var qbe_fn = Fn.init(
+    const qbe_fn = try self.mod.addFunction(Fn.init(
         if (public) self.pub_link else self.priv_link,
         self.ast.file_table.spanStr(
             node.file,
@@ -102,47 +126,53 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         try args.toOwnedSlice(self.allocator),
         qbe_type,
         self.allocator,
-    );
+    ));
 
-    const start_block = try qbe_fn.addBlock("entry");
+    var start_block = try qbe_fn.addBlock("entry");
     for (fun.body) |stmt| {
-        try self.emitStmt(stmt, start_block);
+        try self.emitStmt(stmt, qbe_fn);
     }
     if (qbe_type == null)
         try start_block.addInstr(.{ .ret = null });
-
-    _ = try self.mod.addFunction(qbe_fn);
 }
 
-pub fn emitStmt(self: *Codegen, node: *Node, block: *qbe.Block) !void {
+pub fn emitStmt(self: *Codegen, node: *Node, fun: *Fn) !void {
     switch (node.tag) {
         .let_stmt,
         .let_mut_stmt,
-        => try self.emitLet(node, block),
+        => try self.emitLet(node, fun),
         else => unreachable, // TODO
     }
 }
 
-pub fn emitLet(self: *Codegen, node: *Node, block: *qbe.Block) !void {
+pub fn emitLet(self: *Codegen, node: *Node, fun: *Fn) !void {
     const let = &node.data.let_stmt;
     const name = self.ast.file_table.spanStr(
         self.ast.tokens[let.name].file,
         self.ast.tokens[let.name].start,
         self.ast.tokens[let.name].end,
     );
+    const block = try fun.lastBlock();
+
     const v = Value{ .temporary = name };
     try block.assignInstr(
         v,
-        self.qbeType(let.ty.?).?,
+        self.qbeType(node.ty.?).?,
         if (let.val) |val|
-            try self.getExpr(val)
+            try self.emitExpr(val, block)
         else
-        .{
-            .copy = .{
-                .@"const" = 0,
+            .{
+                .copy = .{
+                    .@"const" = 0,
+                },
             },
-        },
     );
+}
+
+pub fn nextTemp(self: *Codegen) !Value {
+    const name = try self.allocator.print("___.t{d}", .{self.temp_counter});
+    self.temp_counter += 1;
+    return .{ .temporary = name };
 }
 
 pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {
@@ -162,7 +192,7 @@ pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {
     };
 }
 
-pub fn getExpr(self: *Codegen, node: *Node) !Instr {
+pub fn emitExpr(self: *Codegen, node: *Node, block: *Block) !Instr {
     switch (node.tag) {
         .identifier => {
             const name = self.ast.file_table.spanStr(
@@ -185,7 +215,39 @@ pub fn getExpr(self: *Codegen, node: *Node) !Instr {
                 .copy = .{ .@"const" = @bitCast(int) },
             };
         },
+        .string => {
+            const str = try self.slice_def.?.@"struct".stackAlloc(self, block);
+            return .{ .copy = str }; // TODO
+        },
+        .binary_op_add => {
+            const bop = &node.data.binary_op;
+
+            const lhs = try self.nextTemp();
+            const ty = self.qbeType(bop.left.ty.?).?;
+
+            try block.assignInstr(
+                lhs,
+                ty,
+                try self.emitExpr(bop.left, block),
+            );
+
+            const rhs = try self.nextTemp();
+            try block.assignInstr(
+                rhs,
+                ty,
+                try self.emitExpr(bop.right, block),
+            );
+
+            const dst = try self.nextTemp();
+            try block.assignInstr(dst, ty, .{
+                .add = .{
+                    .lhs = lhs,
+                    .rhs = rhs,
+                },
+            });
+            return Instr{ .copy = dst };
+        },
         else => unreachable, // TODO
     }
-    return .{ .copy = .{ .@"const" = 1 }};
+    return .{ .copy = .{ .@"const" = 1 } };
 }

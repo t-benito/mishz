@@ -98,7 +98,7 @@ const FileTable = @import("file_table.zig").FileTable;
 const lex = @import("lex.zig");
 const parse = @import("parse.zig");
 const sema = @import("sema.zig");
-const codegen = @import("codegen.zig");
+const Codegen = @import("codegen.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
 
@@ -226,7 +226,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     const in_writer = &in_file_writer.interface;
 
     var codegen_progress = root_progress.start("Codegen", ast.nodes.len);
-    var gen = codegen.init(arena, in_writer, &codegen_progress, &ast);
+    var gen = try Codegen.init(arena, in_writer, &codegen_progress, &ast);
     try gen.run();
     codegen_progress.end();
 

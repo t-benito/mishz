@@ -25,7 +25,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             },
             .cast => {
                 try printIndent(child_indent, writer);
-                try writer.print("type id: {}\n", .{node.data.cast.ty});
+                try writer.print("type id: {}\n", .{node.ty.?});
                 try printAst((&node.data.cast.expr)[0..1], child_indent, writer);
             },
             .property_access => {
@@ -88,7 +88,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                     "name index: {}",
                     .{node.data.let_stmt.name},
                 );
-                if (node.data.let_stmt.ty) |ty| {
+                if (node.ty) |ty| {
                     try writer.print(
                         ", type id: {}",
                         .{ty},
@@ -104,7 +104,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try printIndent(child_indent, writer);
                 try writer.print(
                     "name index: {}, returns id: {}\n",
-                    .{ node.data.fn_stmt.name, node.data.fn_stmt.returns },
+                    .{ node.data.fn_stmt.name, node.ty.? },
                 );
 
                 // TODO: generics printing
@@ -115,7 +115,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 try printIndent(child_indent, writer);
                 try writer.print(
                     "name index: {}, type id: {}\n",
-                    .{ node.data.param.name, node.data.param.ty },
+                    .{ node.data.param.name, node.ty.? },
                 );
             },
             .ret_stmt => {
@@ -150,7 +150,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                     "name index: {}, type index: {}\n",
                     .{
                         node.data.struct_field.name,
-                        node.data.struct_field.type,
+                        node.ty.?,
                     },
                 );
             },

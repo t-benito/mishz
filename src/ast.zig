@@ -4,11 +4,14 @@ const ft = @import("file_table.zig");
 const FileHandle = ft.FileHandle;
 const FileTable = ft.FileTable;
 
+pub const SourceHandle = u32;
+
 pub const Tag = enum {
     integer,
     string,
     false,
     true,
+    /// only exists because i, benito, want to get a working version out faster
     null,
     identifier,
     builtin,
@@ -98,7 +101,6 @@ pub const Data = union {
         body: []*Node,
     },
     let_stmt: struct {
-        ty: ?Type.Handle,
         name: Token.Handle,
         val: ?*Node,
     },
@@ -110,11 +112,9 @@ pub const Data = union {
             end: Type.Handle,
         },
         body: []*Node,
-        returns: Type.Handle,
     },
     param: struct {
         name: Token.Handle,
-        ty: Type.Handle,
     },
     ret_stmt: struct {
         val: ?*Node,
@@ -136,7 +136,6 @@ pub const Data = union {
     },
     struct_field: struct {
         name: Token.Handle,
-        type: Type.Handle,
         @"pub": bool,
         mut: bool,
     },
@@ -145,7 +144,6 @@ pub const Data = union {
     },
     cast: struct {
         expr: *Node,
-        ty: Type.Handle,
     },
     import_stmt: struct {
         file: FileHandle,
@@ -161,7 +159,7 @@ pub const Field = struct {
 };
 
 pub const Type = union(enum) {
-    pub const Handle = usize;
+    pub const Handle = u32;
 
     void,
     null,
@@ -205,17 +203,23 @@ pub const Type = union(enum) {
 
 pub const TypeNode = struct {
     ty: Type,
-    start: usize,
-    end: usize,
+    start: SourceHandle,
+    end: SourceHandle,
 };
 
 pub const Node = struct {
     data: Data,
     tag: Tag,
-    start: usize,
-    end: usize,
+    start: SourceHandle,
+    end: SourceHandle,
     file: FileHandle,
+    ty: ?Type.Handle = null,
 };
+
+test "sizes" {
+    try std.testing.expect(@sizeOf(Token) == 12);
+    try std.testing.expect(@sizeOf(Node) == 80);
+}
 
 pub const Ast = @This();
 

@@ -518,11 +518,11 @@ pub const Parser = struct {
                         .start = old.start,
                         .end = self.types.items[ty].end,
                         .file = old.file,
+                        .ty = ty,
                         .tag = .cast,
                         .data = .{
                             .cast = .{
                                 .expr = old,
-                                .ty = ty,
                             },
                         },
                     };
@@ -877,7 +877,7 @@ pub const Parser = struct {
 
                 if (self.matches(.lt)) {
                     _ = self.advance();
-                    const astart: Type.Handle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
+                    const astart: Type.Handle = if (self.types.items.len > 0) @intCast(self.types.items.len - 1) else 0;
                     while (!self.matches(.gt) and !self.isAtEnd()) {
                         _ = try self.parseType(&this_node);
                         if (self.matches(.comma)) {
@@ -887,7 +887,7 @@ pub const Parser = struct {
                         }
                     }
                     _ = try self.expectMsg(.gt, "expected '>' to close '<'");
-                    const aend: Type.Handle = if (self.types.items.len > 0) self.types.items.len - 1 else 0;
+                    const aend: Type.Handle = if (self.types.items.len > 0) @intCast(self.types.items.len - 1) else 0;
                     break :blk Type{
                         .named = .{
                             .path = .{
@@ -936,20 +936,20 @@ pub const Parser = struct {
             switch (mod) {
                 .ptr => {
                     ty = Type{
-                        .ptr = self.types.items.len - 1,
+                        .ptr = @intCast(self.types.items.len - 1),
                     };
                 },
                 .array => {
                     ty = Type{
                         .array = .{
-                            .ty = self.types.items.len - 1,
+                            .ty = @intCast(self.types.items.len - 1),
                             .len = mod.array,
                         },
                     };
                 },
                 .slice => {
                     ty = Type{
-                        .slice = self.types.items.len - 1,
+                        .slice = @intCast(self.types.items.len - 1),
                     };
                 },
             }
@@ -960,7 +960,7 @@ pub const Parser = struct {
             .start = base_t.start,
             .end = base_t.end,
         });
-        return self.types.items.len - 1;
+        return @intCast(self.types.items.len - 1);
     }
 
     fn parseFn(self: *Parser, previous: *const std.Progress.Node) !*Node {
@@ -1004,11 +1004,11 @@ pub const Parser = struct {
                 .start = self.tokens[pname].start,
                 .end = self.types.items[pty].end,
                 .file = self.tokens[pname].file,
+                .ty = pty,
                 .tag = .param,
                 .data = .{
                     .param = .{
                         .name = pname,
-                        .ty = pty,
                     },
                 },
             };
@@ -1030,6 +1030,7 @@ pub const Parser = struct {
             .start = start,
             .end = end.end,
             .file = end.file,
+            .ty = retty,
             .tag = .fn_stmt,
             .data = .{
                 .fn_stmt = .{
@@ -1037,10 +1038,9 @@ pub const Parser = struct {
                     .body = body,
                     .params = try params.toOwnedSlice(self.allocator),
                     .gens = .{
-                        .start = generics_start,
-                        .end = generics_end,
+                        .start = @intCast(generics_start),
+                        .end = @intCast(generics_end),
                     },
-                    .returns = retty,
                 },
             },
         };
@@ -1081,11 +1081,11 @@ pub const Parser = struct {
             .start = start.start,
             .end = self.peek().end,
             .file = start.file,
+            .ty = ty,
             .tag = if (mut) .let_mut_stmt else .let_stmt,
             .data = .{
                 .let_stmt = .{
                     .name = name,
-                    .ty = ty,
                     .val = val,
                 },
             },
@@ -1398,11 +1398,11 @@ pub const Parser = struct {
                 .start = self.tokens[fname].start,
                 .end = self.types.items[ftype].end,
                 .file = self.tokens[fname].file,
+                .ty = ftype,
                 .tag = .struct_field,
                 .data = .{
                     .struct_field = .{
                         .name = fname,
-                        .type = ftype,
                         .@"pub" = @"pub",
                         .mut = mut,
                     },
