@@ -58,6 +58,8 @@ pub const Tag = enum {
     struct_field,
     pub_stmt,
     cast,
+    import,
+    import_collection, // block
 };
 
 pub const Data = union {

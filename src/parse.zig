@@ -21,6 +21,8 @@ const ft = @import("file_table.zig");
 const FileTable = ft.FileTable;
 const FileHandle = ft.FileHandle;
 
+const Checker = @import("sema.zig").Checker;
+
 pub const ParseError = enum(u8) {
     UnexpectedToken = 0,
     ExpectedStatement = 1,
@@ -32,6 +34,9 @@ pub const ParseError = enum(u8) {
     UnexpectedDefaultValue = 7,
     UnexpectedTypeToken = 9,
     PubTwice = 10,
+    ImportFileNotFound = 11,
+    ImportError = 12,
+    ImportWrongExt = 13,
 };
 
 pub const Parser = struct {
@@ -41,6 +46,7 @@ pub const Parser = struct {
     current: Token.Handle = 0,
 
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     logger: ErrorLogger,
     writer: *std.Io.Writer,
@@ -48,12 +54,16 @@ pub const Parser = struct {
 
     types: ArrayList(TypeNode),
 
+    lib_dir: []const u8,
+
     pub fn init(
         allocator: std.mem.Allocator,
         writer: *std.Io.Writer,
+        io: std.Io,
         tokens: []Token,
         file_table: *FileTable,
         file: FileHandle,
+        lib_dir: []const u8,
         progress: *const std.Progress.Node,
     ) Parser {
         return Parser{
@@ -61,10 +71,12 @@ pub const Parser = struct {
             .file = file,
             .tokens = tokens,
             .allocator = allocator,
+            .io = io,
             .logger = .init(file_table),
             .writer = writer,
             .types = ArrayList(TypeNode).initCapacity(allocator, 96) catch
                 ArrayList(TypeNode).empty,
+            .lib_dir = lib_dir,
             .root_node = progress,
         };
     }
@@ -267,6 +279,7 @@ pub const Parser = struct {
         defer top_node.end();
 
         switch (self.peek().kind) {
+            .kw_import => return try self.parseImport(&top_node),
             .kw_struct => return try self.parseStruct(&top_node),
             .kw_pub => return try self.parsePub(&top_node),
             .kw_let => return try self.parseLet(&top_node),
@@ -1470,5 +1483,188 @@ pub const Parser = struct {
             },
         };
         return node;
+    }
+
+    pub fn parseImport(self: *Parser, prev: *const std.Progress.Node) !*Node {
+        var pnt = prev.start("Parsing import", 0);
+        defer pnt.end();
+
+        const start = self.current;
+        _ = try self.expect(.kw_import);
+
+        // allow multiple import { }
+        if (self.matches(.open_body)) {
+            var imports = try std.ArrayList(*Node).initCapacity(self.allocator, 3);
+            while (!self.isAtEnd() and !self.matches(.close_body)) {
+                const this_start = self.current;
+                var handle: FileHandle = undefined;
+                if (self.matches(.string_literal)) {
+                    const tkni = self.current;
+                    const tkn = self.advance();
+
+                    const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+                    const abs_path = try std.fs.path.join(self.allocator, &.{
+                        self.file_table.getPath(self.file),
+                        rel_path,
+                    });
+                    handle = try self.loadFile(abs_path, tkni, &pnt);
+                } else {
+                    _ = try self.expectMsg(.lt, "expected '<(file)>' or '\"(file)\"'");
+                    const tkni = self.current;
+                    const tkn = try self.expectMsg(.identifier, "expected file name");
+                    _ = try self.expectMsg(.gt, "expected '>' to close '<'");
+
+                    const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+                    const abs_path = try std.fs.path.join(self.allocator, &.{
+                        self.lib_dir,
+                        rel_path,
+                    });
+                    handle = try self.loadFile(abs_path, tkni, &pnt);
+                }
+                _ = try self.expectMsg(.kw_as, "mish requires explicit namespace naming");
+                const alias = self.current;
+                _ = try self.expectMsg(.identifier, "expected module alias");
+
+                const node = try self.allocator.create(Node);
+                node.* = Node{
+                    .start = self.tokens[this_start].start,
+                    .end = self.peek().end,
+                    .file = self.tokens[this_start].file,
+                    .tag = .import,
+                    .data = .{
+                        .import_stmt = .{
+                            .file = handle,
+                            .alias = alias,
+                        },
+                    },
+                };
+                try imports.append(self.allocator, node);
+            }
+            const end = self.current;
+            _ = try self.expectMsg(.close_body, "expected '}' to close '{' of import");
+
+            const node = try self.allocator.create(Node);
+            node.* = Node{
+                .start = self.tokens[start].start,
+                .end = self.tokens[end].end,
+                .file = self.tokens[start].file,
+                .tag = .import_collection,
+                .data = .{
+                    .block = .{
+                        .body = try imports.toOwnedSlice(self.allocator),
+                    },
+                },
+            };
+            return node;
+        }
+        // single import
+        var handle: FileHandle = undefined;
+        if (self.matches(.string_literal)) {
+            const tkni = self.current;
+            const tkn = self.advance();
+
+            const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+            const abs_path = try std.fs.path.join(self.allocator, &.{
+                self.file_table.getPath(self.file),
+                rel_path,
+            });
+            handle = try self.loadFile(abs_path, tkni, &pnt);
+        } else {
+            _ = try self.expectMsg(.lt, "expected '<(file)>' or '\"(file)\"'");
+            const tkni = self.current;
+            const tkn = try self.expectMsg(.identifier, "expected file name");
+            _ = try self.expectMsg(.gt, "expected '>' to close '<'");
+
+            const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+            const abs_path = try std.fs.path.join(self.allocator, &.{
+                self.lib_dir,
+                rel_path,
+            });
+            handle = try self.loadFile(abs_path, tkni, &pnt);
+        }
+        _ = try self.expectMsg(.kw_as, "mish requires explicit namespace naming");
+        const alias = self.current;
+        _ = try self.expectMsg(.identifier, "expected module alias");
+
+        const node = try self.allocator.create(Node);
+        node.* = Node{
+            .start = self.tokens[start].start,
+            .end = self.peek().end,
+            .file = self.tokens[start].file,
+            .tag = .import,
+            .data = .{
+                .import_stmt = .{
+                    .file = handle,
+                    .alias = alias,
+                },
+            },
+        };
+        return node;
+    }
+
+    pub fn loadFile(self: *Parser, abs_path: []const u8, tkn: Token.Handle, prev: *const std.Progress.Node) !FileHandle {
+        const file = std.Io.Dir.openFileAbsolute(self.io, abs_path, .{}) catch |erro| {
+            switch (erro) {
+                error.FileNotFound => try self.logger.add(self.allocator, Error{
+                    .start = self.tokens[tkn].start,
+                    .end = self.tokens[tkn].end,
+                    .file = self.tokens[tkn].file,
+                    .kind = .{ .ParseError = .ImportFileNotFound },
+                    .message = "file not found",
+                }),
+                else => try self.logger.add(self.allocator, Error{
+                    .start = self.tokens[tkn].start,
+                    .end = self.tokens[tkn].end,
+                    .file = self.tokens[tkn].file,
+                    .kind = .{ .ParseError = .ImportError },
+                    .message = try self.allocator.print("could not import file: {s}", .{@errorName(erro)}),
+                }),
+            }
+            return error.ImportError;
+        };
+        defer file.close(self.io);
+
+        const ext = std.fs.path.extension(abs_path);
+        if (!std.mem.eql(u8, ext, ".msh")) {
+            try self.logger.add(self.allocator, Error{
+                .start = self.tokens[tkn].start,
+                .end = self.tokens[tkn].end,
+                .file = self.tokens[tkn].file,
+                .kind = .{ .ParseError = .ImportWrongExt },
+                .message = try self.allocator.print("file must have a .msh extension, got '{s}'", .{ext}),
+            });
+            return error.ImportError;
+        }
+
+        var read_buf: [1024]u8 = undefined;
+        var reader = file.reader(self.io, &read_buf);
+
+        const source = try reader.interface.allocRemaining(self.allocator, .unlimited);
+        const handle = self.file_table.addFile(abs_path, source);
+
+        var lexer = lex.Lexer.init(handle, self.file_table);
+        const tokens = try lexer.run(self.allocator, self.writer, prev.*);
+
+        var parser = init(
+            self.allocator,
+            self.writer,
+            self.io,
+            tokens,
+            self.file_table,
+            handle,
+            self.lib_dir,
+            prev,
+        );
+        self.file_table.asts[handle] = try parser.run();
+
+        var checker = Checker.init(
+            self.allocator,
+            self.writer,
+            &self.file_table.asts[handle].?,
+            prev,
+        );
+        try checker.run();
+
+        return handle;
     }
 };

@@ -147,6 +147,14 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     });
     var file_table = FileTable.init(total, source);
 
+    var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const exe_blen = try std.process.executableDirPath(io, &exe_buf);
+    exe_buf[exe_blen] = 0;
+    const lib_path = try std.fs.path.join(arena, &.{
+        &exe_buf,
+        "lib",
+    });
+
     // lexer
     var lexer = lex.Lexer.init(0, &file_table);
     var lexer_progress = root_progress.start("Lexer", source.len / 9 + 3);
@@ -163,9 +171,11 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     var parser = parse.Parser.init(
         arena,
         writer,
+        io,
         tokens,
         &file_table,
         0,
+        lib_path,
         &parser_progress,
     );
     var ast = parser.run() catch std.process.exit(1);
@@ -176,6 +186,8 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         try writer.flush();
         return;
     }
+    // set main ast
+    file_table.asts[0] = ast;
 
     // sema
     var checker_progress = root_progress.start("Semantic Analysis", ast.nodes.len);
