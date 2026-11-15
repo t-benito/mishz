@@ -279,10 +279,22 @@ pub const Parser = struct {
         defer top_node.end();
 
         switch (self.peek().kind) {
-            .kw_import => return try self.parseImport(&top_node),
-            .kw_struct => return try self.parseStruct(&top_node),
+            .kw_import => {
+                const node = try self.parseImport(&top_node);
+                _ = try self.expectMsg(.semicolon, "expected ';' after statement");
+                return node;
+            },
+            .kw_struct => {
+                const node = try self.parseStruct(&top_node);
+                _ = try self.expectMsg(.semicolon, "expected ';' after statement");
+                return node;
+            },
             .kw_pub => return try self.parsePub(&top_node),
-            .kw_let => return try self.parseLet(&top_node),
+            .kw_let => {
+                const node = try self.parseLet(&top_node);
+                _ = try self.expectMsg(.semicolon, "expected ';' after statement");
+                return node;
+            },
             .kw_fn => return try self.parseFn(&top_node),
             else => {
                 const found_top = self.peek();
@@ -1566,7 +1578,7 @@ pub const Parser = struct {
 
             const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
             const abs_path = try std.fs.path.join(self.allocator, &.{
-                self.file_table.getPath(self.file),
+                std.fs.path.dirname(self.file_table.getPath(self.file)).?,
                 rel_path,
             });
             handle = try self.loadFile(abs_path, tkni, &pnt);
@@ -1583,7 +1595,7 @@ pub const Parser = struct {
             });
             handle = try self.loadFile(abs_path, tkni, &pnt);
         }
-        _ = try self.expectMsg(.kw_as, "mish requires explicit namespace naming");
+        _ = try self.expectMsg(.kw_as, "mish requires explicit namespace naming using 'as <name>'");
         const alias = self.current;
         _ = try self.expectMsg(.identifier, "expected module alias");
 
@@ -1645,7 +1657,7 @@ pub const Parser = struct {
         var reader = file.reader(self.io, &read_buf);
 
         const source = try reader.interface.allocRemaining(self.allocator, .unlimited);
-        const handle = self.file_table.addFile(abs_path, source);
+        const handle = try self.file_table.addFile(abs_path, source);
 
         var lexer = lex.Lexer.init(handle, self.file_table);
         const tokens = try lexer.run(self.allocator, self.writer, prev.*);

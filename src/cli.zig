@@ -145,7 +145,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         cwd,
         path,
     });
-    var file_table = FileTable.init(total, source);
+    var file_table = try FileTable.init(arena, total, source);
 
     var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     const exe_blen = try std.process.executableDirPath(io, &exe_buf);

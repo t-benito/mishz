@@ -1,3 +1,5 @@
+import "test.msh" as test;
+
 pub fn main() void {
     let i = 1;
     let j = i + 2;

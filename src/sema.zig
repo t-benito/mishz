@@ -32,7 +32,9 @@ const Symbol = struct {
         func,
         strct,
         param,
+        module,
     };
+
     pub const Data = union {
         vari: Type.Handle,
         func: struct {
@@ -40,6 +42,7 @@ const Symbol = struct {
             returns: Type.Handle,
         },
         param: Type.Handle,
+        module: FileHandle,
     };
 };
 
@@ -57,7 +60,7 @@ const ScopeMap = struct {
     /// exit the current scope
     pub fn exit(self: *ScopeMap) void {
         var popped = self.maps.pop();
-        if (popped) |_| {
+        if (popped != null) {
             popped.?.deinit();
         }
     }
@@ -245,11 +248,10 @@ pub const Checker = struct {
                 }
             },
             .let_stmt => {},
-            .pub_stmt => {
-                parent_node.setName("Pub");
-
-                try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true);
+            .import => {
+                const ast = &self.file_table.asts[node.data.import_stmt.file].?;
             },
+            .pub_stmt => try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true),
             else => unreachable, // TODO
         }
     }
