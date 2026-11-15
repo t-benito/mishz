@@ -63,7 +63,7 @@ pub const Parser = struct {
             .allocator = allocator,
             .logger = .init(file_table),
             .writer = writer,
-            .types = ArrayList(TypeNode).initCapacity(allocator, 2) catch
+            .types = ArrayList(TypeNode).initCapacity(allocator, 96) catch
                 ArrayList(TypeNode).empty,
             .root_node = progress,
         };

@@ -266,7 +266,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
 }
 
 fn fail(comptime fmt: []const u8, args: anytype, writer: *std.Io.Writer) noreturn {
-    writer.writeAll("\x1b[1m\x1b[31merror:\x1b0m") catch {};
+    writer.writeAll("\x1b[1m\x1b[31merror: \x1b[0m") catch {};
     writer.print(fmt ++ "\n", args) catch {};
 
     usage(writer) catch {};
