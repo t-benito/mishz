@@ -180,14 +180,19 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     );
     var ast = parser.run() catch std.process.exit(1);
     parser_progress.end();
+    // set main ast
+    file_table.asts[0] = ast;
 
     if (flags.ast) {
-        try astprint.printAst(ast.nodes, 0, writer);
+        for (file_table.asts, 0..) |tast, i| {
+            if (tast == null)
+                continue;
+            try writer.print("- ast of file {}\n", .{i});
+            try astprint.printAst(tast.?.nodes, 1, writer);
+        }
         try writer.flush();
         return;
     }
-    // set main ast
-    file_table.asts[0] = ast;
 
     // sema
     var checker_progress = root_progress.start("Semantic Analysis", ast.nodes.len);
@@ -201,7 +206,12 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     checker_progress.end();
 
     if (flags.typedast) {
-        try astprint.printAst(ast.nodes, 0, writer);
+        for (file_table.asts, 0..) |tast, i| {
+            if (tast == null)
+                continue;
+            try writer.print("- ast of file {}", .{i});
+            try astprint.printAst(tast.?.nodes, 1, writer);
+        }
         try writer.flush();
         return;
     }

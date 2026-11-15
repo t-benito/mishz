@@ -5,11 +5,11 @@ const Ast = @import("ast.zig").Ast;
 const std = @import("std");
 const maxInt = std.math.maxInt;
 
-const arr_len = maxInt(FileHandle);
+const arr_len = maxInt(FileHandle) + 1;
 
 paths: [arr_len][]const u8 = undefined,
 sources: [arr_len][]const u8 = undefined,
-asts: [arr_len]?Ast = undefined,
+asts: [arr_len]?Ast = @splat(null),
 len: FileHandle = 0,
 
 pub fn init(main_path: []const u8, main_source: []const u8) FileTable {
