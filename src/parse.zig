@@ -1507,6 +1507,7 @@ pub const Parser = struct {
                         self.file_table.getPath(self.file),
                         rel_path,
                     });
+
                     handle = try self.loadFile(abs_path, tkni, &pnt);
                 } else {
                     _ = try self.expectMsg(.lt, "expected '<(file)>' or '\"(file)\"'");
@@ -1603,6 +1604,10 @@ pub const Parser = struct {
     }
 
     pub fn loadFile(self: *Parser, abs_path: []const u8, tkn: Token.Handle, prev: *const std.Progress.Node) !FileHandle {
+        if (self.file_table.fromPath(abs_path)) |handle| {
+            return handle;
+        }
+
         const file = std.Io.Dir.openFileAbsolute(self.io, abs_path, .{}) catch |erro| {
             switch (erro) {
                 error.FileNotFound => try self.logger.add(self.allocator, Error{
