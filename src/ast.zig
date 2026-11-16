@@ -1,8 +1,11 @@
 const std = @import("std");
 const Token = @import("lex.zig").Token;
+
 const ft = @import("file_table.zig");
 const FileHandle = ft.FileHandle;
 const FileTable = ft.FileTable;
+
+const Type = @import("type.zig").Type;
 
 pub const SourceHandle = u32;
 
@@ -153,62 +156,6 @@ pub const Data = union {
     },
 };
 
-pub const Field = struct {
-    name: []const u8,
-    type: Type.Handle,
-    mut: bool,
-    @"pub": bool,
-};
-
-pub const Type = union(enum) {
-    pub const Handle = u32;
-
-    void,
-    null,
-    i8,
-    i16,
-    i32,
-    i64,
-    u8,
-    u16,
-    u32,
-    u64,
-    f32,
-    f64,
-    bool,
-    func: struct {
-        returns: Type.Handle,
-        params_start: usize,
-        params_end: usize,
-    },
-    ptr: Type.Handle,
-    array: struct {
-        ty: Type.Handle,
-        len: *Node,
-    },
-    slice: Type.Handle,
-    @"struct": struct {
-        name: []const u8,
-        fields: []Field,
-    },
-    named: struct {
-        path: struct {
-            start: Token.Handle,
-            end: Token.Handle,
-        },
-        gens: ?struct {
-            start: Type.Handle,
-            end: Type.Handle,
-        },
-    },
-};
-
-pub const TypeNode = struct {
-    ty: Type,
-    start: SourceHandle,
-    end: SourceHandle,
-};
-
 pub const Node = struct {
     data: Data,
     tag: Tag,
@@ -219,6 +166,7 @@ pub const Node = struct {
 };
 
 test "sizes" {
+    // heavy, but, it gets the job done
     try std.testing.expect(@sizeOf(Token) == 12);
     try std.testing.expect(@sizeOf(Node) == 80);
 }
@@ -227,5 +175,5 @@ pub const Ast = @This();
 
 tokens: []Token,
 nodes: []*Node,
-types: std.ArrayList(TypeNode),
+types: std.ArrayList(Type),
 file_table: *FileTable,
