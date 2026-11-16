@@ -62,9 +62,13 @@ pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, root: *ProgNod
 
 pub fn run(self: *Codegen) !void {
     try self.emitPre();
-    for (self.ast.nodes) |node| {
-        try self.emitTopLevel(node, false);
-        self.temp_counter = 0;
+    for (self.ast.file_table.asts) |maybeast| {
+        if (maybeast == null)
+            continue;
+        for (maybeast.?.nodes) |node| {
+            try self.emitTopLevel(node, false);
+            self.temp_counter = 0;
+        }
     }
     var format_node = self.root.start("Qbe Format", 0);
     try self.mod.format(self.writer);
@@ -84,10 +88,25 @@ pub fn emitPre(self: *Codegen) !void {
     );
 }
 
+pub fn mangleFnName(self: *Codegen, node: *Node) ![]const u8 {
+    const start = self.ast.tokens[node.data.fn_stmt.name].start;
+    const end = self.ast.tokens[node.data.fn_stmt.name].end;
+    const name = self.ast.file_table.spanStr(
+        node.file,
+        start,
+        end,
+    );
+    return if (node.file == 0)
+        name
+    else
+        try self.allocator.print("___.f{}.{s}", .{ node.file, name });
+}
+
 pub fn emitTopLevel(self: *Codegen, node: *Node, public: bool) !void {
     switch (node.tag) {
         .fn_stmt => try self.emitFn(node, public),
         .pub_stmt => try self.emitTopLevel(node.data.pub_stmt.stmt, true),
+        .import => {}, // skip
         else => unreachable, // TODO
     }
 }
@@ -112,17 +131,11 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         };
         try args.append(self.allocator, arg);
     }
-
-    const name = fun.name;
     const qbe_type = self.qbeType(node.ty.?);
 
     const qbe_fn = try self.mod.addFunction(Fn.init(
         if (public) self.pub_link else self.priv_link,
-        self.ast.file_table.spanStr(
-            node.file,
-            self.ast.tokens[name].start,
-            self.ast.tokens[name].end,
-        ),
+        try self.mangleFnName(node),
         try args.toOwnedSlice(self.allocator),
         qbe_type,
         self.allocator,
@@ -141,6 +154,8 @@ pub fn emitStmt(self: *Codegen, node: *Node, fun: *Fn) !void {
         .let_stmt,
         .let_mut_stmt,
         => try self.emitLet(node, fun),
+        .if_stmt,
+        => try self.emitIf(node, fun),
         else => unreachable, // TODO
     }
 }
@@ -169,10 +184,40 @@ pub fn emitLet(self: *Codegen, node: *Node, fun: *Fn) !void {
     );
 }
 
+pub fn emitIf(self: *Codegen, node: *Node, fun: *Fn) !void {
+    const @"if" = &node.data.if_stmt;
+
+    const block = try fun.lastBlock();
+    const temp = try self.nextTemp();
+
+    try block.assignInstr(
+        temp,
+        self.qbeType(@"if".cond.ty.?).?,
+        try self.emitExpr(@"if".cond, block),
+    );
+
+    const then_b = try self.nextBlock(fun);
+    const else_b = try self.nextBlock(fun);
+
+    try block.addInstr(.{
+        .jnz = .{
+            .cond = temp,
+            .non_zero = then_b.label,
+            .zero = else_b.label,
+        },
+    });
+}
+
 pub fn nextTemp(self: *Codegen) !Value {
     const name = try self.allocator.print("___.t{d}", .{self.temp_counter});
     self.temp_counter += 1;
     return .{ .temporary = name };
+}
+
+pub fn nextBlock(self: *Codegen, fun: *Fn) !*Block {
+    const name = try self.allocator.print("b{d}", .{self.temp_counter});
+    self.temp_counter += 1;
+    return fun.addBlock(name);
 }
 
 pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {

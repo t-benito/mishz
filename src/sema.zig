@@ -1,5 +1,8 @@
 const std = @import("std");
 
+// TODO: i believe this entire file needs a rewrite.
+// i am knowingly procastinating that.
+
 const astt = @import("ast.zig");
 const Node = astt.Node;
 const Data = astt.Data;
@@ -140,10 +143,11 @@ pub const Checker = struct {
     file_table: *FileTable,
 
     writer: *std.Io.Writer,
-
     allocator: std.mem.Allocator,
     root_node: *const std.Progress.Node,
     logger: err.ErrorLogger,
+
+    imports: [FileTable.arr_len]std.StringHashMap(Symbol),
 
     string_ty_id: Type.Handle = 0,
     i32_ty_id: Type.Handle = 0,
@@ -167,6 +171,7 @@ pub const Checker = struct {
             .allocator = allocator,
             .root_node = root_node,
             .logger = .init(ast.file_table),
+            .imports = @splat(.init(allocator)),
         };
     }
 
@@ -249,11 +254,66 @@ pub const Checker = struct {
             },
             .let_stmt => {},
             .import => {
-                const ast = &self.file_table.asts[node.data.import_stmt.file].?;
+                try self.moduleSwitch(node, false);
             },
             .pub_stmt => try self.precheckTop(node.data.pub_stmt.stmt, &parent_node, true),
             else => unreachable, // TODO
         }
+    }
+
+    fn moduleSwitch(self: *Checker, node: *Node, public: bool) !void {
+        const ast = &self.file_table.asts[node.data.import_stmt.file].?;
+        const file = node.data.import_stmt.file;
+        var map = std.StringHashMap(Symbol).init(self.allocator);
+
+        for (ast.nodes) |anode| {
+            switch (anode.tag) {
+                .fn_stmt => {
+                    const fun = &anode.data.fn_stmt;
+                    const name = self.file_table.spanStr(
+                        anode.file,
+                        ast.tokens[fun.name].start,
+                        ast.tokens[fun.name].end,
+                    );
+
+                    var params = try std.ArrayList(Type.Handle).initCapacity(self.allocator, fun.params.len);
+                    for (fun.params) |param| {
+                        try params.append(self.allocator, param.ty.?);
+                    }
+
+                    try map.put(name, Symbol{
+                        .kind = .func,
+                        .start = anode.start,
+                        .end = anode.end,
+                        .file = anode.file,
+                        .public = public,
+                        .data = .{
+                            .func = .{
+                                .params = try params.toOwnedSlice(self.allocator),
+                                .returns = anode.ty.?,
+                            },
+                        },
+                    });
+                },
+                .pub_stmt => unreachable, // TODO
+                else => unreachable, // TODO
+            }
+        }
+
+        self.imports[file] = map;
+        const alias = self.file_table.spanStr(
+            file,
+            self.tokens[node.data.import_stmt.alias].start,
+            self.tokens[node.data.import_stmt.alias].end,
+        );
+        try self.scope_map.define(alias, Symbol{
+            .kind = .module,
+            .start = node.start,
+            .end = node.end,
+            .file = node.file,
+            .public = public,
+            .data = .{ .module = file },
+        }, &self.logger);
     }
 
     fn buildCache(self: *Checker) !void {
@@ -354,8 +414,7 @@ pub const Checker = struct {
                 parent_node.setName("Public");
                 try self.checkTop(node.data.pub_stmt.stmt, &parent_node);
             },
-            .struct_stmt => {}, // TODO: make
-            else => unreachable, // ?
+            else => {}, // TODO:
         }
     }
 
@@ -629,7 +688,7 @@ pub const Checker = struct {
                             node.ty = sym.data.param;
                             return self.types.items[sym.data.param].ty;
                         },
-                        .strct => unreachable, // TODO
+                        else => unreachable, // TODO
                     }
                 }
                 try self.logger.add(self.allocator, Error{

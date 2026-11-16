@@ -5,7 +5,7 @@ const Ast = @import("ast.zig").Ast;
 const std = @import("std");
 const maxInt = std.math.maxInt;
 
-const arr_len = maxInt(FileHandle) + 1;
+pub const arr_len = maxInt(FileHandle) + 1;
 
 paths: [arr_len][]const u8 = undefined,
 pmap: std.StringHashMapUnmanaged(FileHandle) = .empty,
@@ -22,9 +22,7 @@ pub fn init(gpa: std.mem.Allocator, main_path: []const u8, main_source: []const 
     try self.pmap.ensureTotalCapacity(gpa, arr_len);
 
     self.sources[0] = main_source;
-    self.asts[0] = null;
     self.len = 1;
-
     return self;
 }
 
