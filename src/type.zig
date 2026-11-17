@@ -1,13 +1,16 @@
 const std = @import("std");
 const mem = std.mem;
+const Wyhash = std.hash.Wyhash;
+const Tag = std.meta.Tag;
 
 const ast = @import("ast.zig");
 const Node = ast.Node;
-
 const Token = @import("lex.zig").Token;
 
 pub const Type = union(enum) {
     pub const Handle = enum(u32) {
+        pub const Count = 12;
+
         i8 = 0,
         i16 = 1,
         i32 = 2,
@@ -103,3 +106,39 @@ pub const NamedType = struct {
         end: Type.Handle,
     },
 };
+
+const TypeContext = struct {
+    const Self = @This();
+
+    pub fn hash(_: Self, key: Type) u64 {
+        const tag = @backingInt(@as(Tag(Type), key));
+
+        return switch (key) {
+            .ptr => |p| Wyhash.hash(tag, mem.asBytes(&p.inner)),
+            .slice => |s| Wyhash.hash(tag, mem.asBytes(&s.inner)),
+            .array => |a| Wyhash.hash(tag, mem.asBytes(&a.inner)),
+            .@"fn" => |f| {
+                var h = Wyhash.init(tag);
+
+                h.update(mem.asBytes(&f.return_type));
+                h.update(mem.asBytes(&f.params));
+
+                return h.final();
+            },
+            .@"struct", .named => Wyhash.hash(tag, mem.asBytes(&key)),
+        };
+    }
+
+    pub fn eql(_: Self, a: Type, b: Type) bool {
+        if (@as(Tag(Type), a) != @as(Tag(Type), b))
+            return false;
+        return switch (a) {
+            .ptr => |p| p.inner == b.ptr.inner,
+            .slice => |s| s.inner == b.slice.inner,
+            .array => |arr| arr.inner == b.array.inner and arr.length == b.array.length,
+            .@"fn" => |f| f.return_type == b.@"fn".return_type and std.mem.eql(Type.Handle, f.params, b.@"fn".params),
+        };
+    }
+};
+
+pub const TypePool = std.HashMap(Type, Type.Handle, TypeContext, std.hash_map.default_max_load_percentage);

@@ -1,27 +1,26 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
-
-const lex = @import("lex.zig");
-const Token = lex.Token;
+const mem = std.mem;
+const Allocator = mem.Allocator;
+const Io = std.Io;
+const ProgNode = std.Progress.Node;
 
 const ast = @import("ast.zig");
 const Node = ast.Node;
-const Type = ast.Type;
-const TypeNode = ast.TypeNode;
 const Tag = ast.Tag;
 const Ast = ast.Ast;
-
+const Checker = @import("sema.zig").Checker;
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
-
 const Error = err.Error;
 const ErrorType = err.ErrorType;
-
-const ft = @import("file_table.zig");
-const FileTable = ft.FileTable;
-const FileHandle = ft.FileHandle;
-
-const Checker = @import("sema.zig").Checker;
+const FileTable = @import("file_table.zig");
+const FileHandle = FileTable.Handle;
+const lex = @import("lex.zig");
+const Token = lex.Token;
+const typet = @import("type.zig");
+const Type = typet.Type;
+const TypePool = typet.TypePool;
 
 pub const ParseError = enum(u8) {
     UnexpectedToken = 0,
@@ -45,26 +44,24 @@ pub const Parser = struct {
     tokens: []Token,
     current: Token.Handle = 0,
 
-    allocator: std.mem.Allocator,
-    io: std.Io,
+    allocator: Allocator,
+    io: Io,
 
     logger: ErrorLogger,
-    writer: *std.Io.Writer,
-    root_node: *const std.Progress.Node,
-
-    types: ArrayList(TypeNode),
+    writer: *Io.Writer,
+    root_node: *const ProgNode,
 
     lib_dir: []const u8,
 
     pub fn init(
-        allocator: std.mem.Allocator,
-        writer: *std.Io.Writer,
-        io: std.Io,
+        allocator: Allocator,
+        writer: *Io.Writer,
+        io: Io,
         tokens: []Token,
         file_table: *FileTable,
         file: FileHandle,
         lib_dir: []const u8,
-        progress: *const std.Progress.Node,
+        progress: *const ProgNode,
     ) Parser {
         return Parser{
             .file_table = file_table,
@@ -74,8 +71,6 @@ pub const Parser = struct {
             .io = io,
             .logger = .init(file_table),
             .writer = writer,
-            .types = ArrayList(TypeNode).initCapacity(allocator, 96) catch
-                ArrayList(TypeNode).empty,
             .lib_dir = lib_dir,
             .root_node = progress,
         };
@@ -140,8 +135,6 @@ pub const Parser = struct {
             .{
                 msg,
                 describeKind(t.kind),
-                //self.file_table.spanStr(t.file, t.start, t.end),
-                //@tagName(t.kind),
             },
         );
         try self.logger.add(self.allocator, Error{
@@ -248,15 +241,15 @@ pub const Parser = struct {
             try nodes.append(self.allocator, top);
             self.root_node.setEstimatedTotalItems(@max(self.tokens.len / 25, nodes.items.len));
         }
+
         if (try self.logger.dump(self.allocator, self.writer)) {
             return error.parse;
         }
+
         const slice = try nodes.toOwnedSlice(self.allocator);
         return Ast{
             .nodes = slice,
             .tokens = self.tokens,
-            .file_table = self.file_table,
-            .types = self.types,
         };
     }
 
@@ -268,7 +261,7 @@ pub const Parser = struct {
                 break;
             }
             previous.increaseEstimatedTotalItems(1);
-            try body.append(self.allocator, try self.parseStmt(previous)); //&parent_node));
+            try body.append(self.allocator, try self.parseStmt(previous));
         }
         return body.toOwnedSlice(self.allocator);
     }
@@ -520,7 +513,6 @@ pub const Parser = struct {
                         "expected an expression, found '{s}'",
                         .{
                             describeKind(lhs_t.kind),
-                            //self.file_table.spanStr(lhs_t.file, lhs_t.start, lhs_t.end),
                         },
                     ),
                 });
@@ -806,28 +798,14 @@ pub const Parser = struct {
         UnexpectedToken,
         ExpectedExpression,
     }!Type.Handle {
-        var parent_node = previous.start("Type", 1);
-        defer parent_node.end();
-
         var mods = try ArrayList(ModTag).initCapacity(self.allocator, 3);
         defer mods.deinit(self.allocator);
 
-        var try_node = parent_node.start("Collecting Modifiers", 0);
-        errdefer try_node.end();
         while (!self.isAtEnd()) {
             if (self.matches(.star)) {
-                try_node.increaseEstimatedTotalItems(1);
-                var node = try_node.start("Pointer", 0);
-                errdefer node.end();
-
                 _ = self.advance();
                 try mods.append(self.allocator, .ptr);
-                node.end();
             } else if (self.matches(.open_bracket)) {
-                try_node.increaseEstimatedTotalItems(1);
-                var node = try_node.start("Array", 0);
-                defer node.end();
-
                 _ = self.advance();
                 var size: ?*Node = null;
 
@@ -836,8 +814,7 @@ pub const Parser = struct {
                     try mods.append(self.allocator, .slice);
                     continue;
                 }
-                node.increaseEstimatedTotalItems(1);
-                size = try self.parseExpr(0, &node);
+                size = try self.parseExpr(0, previous);
 
                 _ = try self.expectMsg(.close_bracket, "expected ']' to close '['");
 
@@ -860,16 +837,13 @@ pub const Parser = struct {
             .kw_void => .void,
             .kw_bool => .bool,
             .arrow => {
-                var this_node = parent_node.start("Function type", 2);
-                defer this_node.end();
-
-                const return_ty = try self.parseType(&this_node);
+                const return_ty = try self.parseType(previous);
                 const params_start = self.types.items.len;
 
                 if (self.matches(.open_paren)) {
                     _ = try self.expect(.open_paren);
                     while (!self.matches(.close_paren)) {
-                        _ = try self.parseType(&this_node);
+                        _ = try self.parseType(previous);
                     }
                     _ = try self.expectMsg(.close_paren, "expected ')' to close '('");
                 }
@@ -883,28 +857,19 @@ pub const Parser = struct {
                 };
             },
             .identifier => {
-                var this_node = parent_node.start("Named type", 2);
-                defer this_node.end();
-
                 const pstart = self.current - 1;
-
-                var path_node = this_node.start("Path", 0);
 
                 while (self.matches(.dot)) {
                     _ = try self.expect(.dot);
                     _ = try self.expect(.identifier);
                 }
                 const pend = self.current;
-                path_node.end();
-
-                var args_node = this_node.start("Arguments", 0);
-                defer args_node.end();
 
                 if (self.matches(.lt)) {
                     _ = self.advance();
                     const astart: Type.Handle = if (self.types.items.len > 0) @intCast(self.types.items.len - 1) else 0;
                     while (!self.matches(.gt) and !self.isAtEnd()) {
-                        _ = try self.parseType(&this_node);
+                        _ = try self.parseType(previous);
                         if (self.matches(.comma)) {
                             _ = self.advance();
                         } else {
@@ -949,43 +914,28 @@ pub const Parser = struct {
             },
         };
 
-        try self.types.append(self.allocator, TypeNode{
-            .ty = ty,
-            .start = base_t.start,
-            .end = base_t.end,
-        });
-
-        try_node.end();
+        const prim = try self.getOrAddType(ty);
 
         for (mods.items) |mod| {
             switch (mod) {
                 .ptr => {
-                    ty = Type{
-                        .ptr = @intCast(self.types.items.len - 1),
-                    };
+                    ty = Type{ .ptr = prim };
                 },
                 .array => {
                     ty = Type{
                         .array = .{
-                            .ty = @intCast(self.types.items.len - 1),
+                            .ty = prim,
                             .len = mod.array,
                         },
                     };
                 },
                 .slice => {
-                    ty = Type{
-                        .slice = @intCast(self.types.items.len - 1),
-                    };
+                    ty = Type{ .slice = prim };
                 },
             }
         }
 
-        try self.types.append(self.allocator, TypeNode{
-            .ty = ty,
-            .start = base_t.start,
-            .end = base_t.end,
-        });
-        return @intCast(self.types.items.len - 1);
+        return try self.getOrAddType(ty);
     }
 
     fn parseFn(self: *Parser, previous: *const std.Progress.Node) !*Node {
@@ -1000,8 +950,6 @@ pub const Parser = struct {
         const generics_start = @max(@as(isize, @intCast(self.types.items.len)) - 1, 0);
         if (self.matches(.lt)) {
             pn.increaseEstimatedTotalItems(1);
-            const this = pn.start("Generics", 0);
-            defer this.end();
 
             _ = self.advance();
             while (!self.isAtEnd() and !self.matches(.gt)) {
@@ -1015,19 +963,18 @@ pub const Parser = struct {
         _ = try self.expect(.open_paren);
 
         var params = try ArrayList(*Node).initCapacity(self.allocator, 4);
-        var paramsn = pn.start("Params", 0);
+
         while (!self.isAtEnd() and !self.matches(.close_paren)) {
             const pname = self.current;
             _ = try self.expectMsg(.identifier, "expected parameter name");
             _ = try self.expectMsg(.colon, "expected ':' before parameter type");
 
-            pn.increaseEstimatedTotalItems(1);
             const pty = try self.parseType(&pn);
 
             const node = try self.allocator.create(Node);
             node.* = Node{
                 .start = self.tokens[pname].start,
-                .end = self.types.items[pty].end,
+                .end = self.peek().end,
                 .file = self.tokens[pname].file,
                 .ty = pty,
                 .tag = .param,
@@ -1040,7 +987,6 @@ pub const Parser = struct {
             try params.append(self.allocator, node);
         }
         _ = try self.expect(.close_paren);
-        paramsn.end();
 
         const retty = try self.parseType(&pn);
 
@@ -1469,8 +1415,8 @@ pub const Parser = struct {
         const old_root = self.root_node;
         self.root_node = &this_node;
 
-        const mem = try self.parseTop();
-        if (mem.tag == .pub_stmt) {
+        const stmt = try self.parseTop();
+        if (stmt.tag == .pub_stmt) {
             try self.logger.add(self.allocator, .{
                 .start = self.tokens[start].start,
                 .end = self.tokens[start].end,
@@ -1657,7 +1603,7 @@ pub const Parser = struct {
         var reader = file.reader(self.io, &read_buf);
 
         const source = try reader.interface.allocRemaining(self.allocator, .unlimited);
-        const handle = try self.file_table.addFile(abs_path, source);
+        const handle = try self.file_table.addFile(.{ .path = abs_path, .source = source });
 
         var lexer = lex.Lexer.init(handle, self.file_table);
         const tokens = try lexer.run(self.allocator, self.writer, prev.*);

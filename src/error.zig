@@ -1,17 +1,16 @@
 const std = @import("std");
 
-const ft = @import("file_table.zig");
-const FileTable = ft.FileTable;
-const FileHandle = ft.FileHandle;
+const FileTable = @import("file_table.zig");
+const FileHandle = FileTable.Handle;
 
 const Lex_Error = @import("lex.zig").LexError;
 const Parse_Error = @import("parse.zig").ParseError;
-const Type_Error = @import("sema.zig").TypeError;
+const Sema_Error = @import("sema.zig").SemaError;
 
 pub const ErrorType = union(enum(u8)) {
     ParseError: Parse_Error = 1,
     LexError: Lex_Error = 2,
-    TypeError: Type_Error = 3,
+    SemaError: Sema_Error = 3,
 };
 
 pub const Note = struct {
@@ -57,7 +56,7 @@ pub const ErrorLogger = struct {
         const _2: u16 = @intCast(switch (kind) {
             .LexError => |e| @backingInt(e),
             .ParseError => |e| @backingInt(e),
-            .TypeError => |e| @backingInt(e),
+            .SemaError => |e| @backingInt(e),
         });
 
         try writer.print("E{d}", .{_1 * 1000 + _2});

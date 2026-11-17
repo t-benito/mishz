@@ -1,10 +1,9 @@
 const std = @import("std");
-const Token = @import("lex.zig").Token;
 
 const ft = @import("file_table.zig");
 const FileHandle = ft.FileHandle;
 const FileTable = ft.FileTable;
-
+const Token = @import("lex.zig").Token;
 const Type = @import("type.zig").Type;
 
 pub const SourceHandle = u32;
@@ -166,14 +165,17 @@ pub const Node = struct {
 };
 
 test "sizes" {
-    // heavy, but, it gets the job done
-    try std.testing.expect(@sizeOf(Token) == 12);
-    try std.testing.expect(@sizeOf(Node) == 80);
+    // run at compile
+    comptime {
+        // heavy, but, it gets the job done
+        try std.testing.expect(@sizeOf(Token) == 12);
+        try std.testing.expect(@sizeOf(Node) == 80);
+
+        try std.testing.expect(@sizeOf(Ast) == 32);
+    }
 }
 
 pub const Ast = @This();
 
 tokens: []Token,
 nodes: []*Node,
-types: std.ArrayList(Type),
-file_table: *FileTable,

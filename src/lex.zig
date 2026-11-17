@@ -2,9 +2,8 @@ const std = @import("std");
 
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
-const ft = @import("file_table.zig");
-const FileTable = ft.FileTable;
-const FileHandle = ft.FileHandle;
+const FileTable = @import("file_table.zig");
+const FileHandle = FileTable.Handle;
 const SourceHandle = @import("ast.zig").SourceHandle;
 
 pub const Token = struct {
