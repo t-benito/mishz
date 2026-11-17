@@ -1,4 +1,6 @@
 const std = @import("std");
+const mem = std.mem;
+const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 const ProgNode = std.Progress.Node;
 
@@ -18,15 +20,13 @@ const Field = layoutt.Field;
 const Struct = layoutt.Struct;
 const StructDef = layoutt.Struct.Def;
 
-const a = @import("ast.zig");
-const Ast = a.Ast;
-const Node = a.Node;
-const Type = a.Type;
-const TypeNode = a.TypeNode;
-const ft = @import("file_table.zig");
-const FileTable = ft.FileTable;
-const FileHandle = ft.FileHandle;
+const Ast = @import("ast.zig");
+const Node = Ast.Node;
+const FileTable = @import("file_table.zig");
+const FileHandle = FileTable.Handle;
 const Token = @import("lex.zig").Token;
+const typet = @import("type.zig");
+const Type = typet.Type;
 
 pub const Codegen = @This();
 
@@ -35,42 +35,46 @@ writer: *std.Io.Writer,
 mod: Module,
 pub_link: Linkage,
 priv_link: Linkage,
-ast: *Ast,
+file_table: *FileTable,
 globals: ArrayList([]const u8),
 
-root: *ProgNode,
-current: *ProgNode,
+prev: *ProgNode,
+
+/// The current ast
+ast: *const Ast,
 
 pointer_width: qbe.Type = .long,
 slice_def: ?StructDef = null,
 
 temp_counter: usize = 0,
 
-pub fn init(allocator: std.mem.Allocator, writer: *std.Io.Writer, root: *ProgNode, ast: *Ast) !Codegen {
+pub fn init(allocator: Allocator, writer: *std.Io.Writer, root: *ProgNode, file_table: *FileTable) !Codegen {
     return Codegen{
         .allocator = allocator,
         .writer = writer,
         .mod = .init(allocator),
         .pub_link = .public(),
         .priv_link = .private(),
-        .ast = ast,
-        .globals = ArrayList([]const u8).initCapacity(allocator, @divTrunc(ast.nodes.len, 2) + 1) catch ArrayList([]const u8).empty,
-        .root = root,
-        .current = root,
+        .file_table = file_table,
+        .globals = ArrayList([]const u8).initCapacity(allocator, 25) catch ArrayList([]const u8).empty,
+        .prev = root,
+        .ast = undefined,
     };
 }
 
 pub fn run(self: *Codegen) !void {
     try self.emitPre();
-    for (self.ast.file_table.asts) |maybeast| {
+    for (self.file_table.asts) |maybeast| {
         if (maybeast == null)
             continue;
+        self.ast = &maybeast.?;
+
         for (maybeast.?.nodes) |node| {
             try self.emitTopLevel(node, false);
             self.temp_counter = 0;
         }
     }
-    var format_node = self.root.start("Qbe Format", 0);
+    var format_node = self.prev.start("Qbe Format", 0);
     try self.mod.format(self.writer);
     try self.writer.flush();
     format_node.end();
@@ -91,7 +95,7 @@ pub fn emitPre(self: *Codegen) !void {
 pub fn mangleFnName(self: *Codegen, node: *Node) ![]const u8 {
     const start = self.ast.tokens[node.data.fn_stmt.name].start;
     const end = self.ast.tokens[node.data.fn_stmt.name].end;
-    const name = self.ast.file_table.spanStr(
+    const name = self.file_table.spanStr(
         node.file,
         start,
         end,
@@ -122,7 +126,7 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         const arg = Arg{
             .ty = self.qbeType(param.ty.?).?,
             .val = .{
-                .temporary = self.ast.file_table.spanStr(
+                .temporary = self.file_table.spanStr(
                     param.file,
                     param.start,
                     param.end,
@@ -162,7 +166,7 @@ pub fn emitStmt(self: *Codegen, node: *Node, fun: *Fn) !void {
 
 pub fn emitLet(self: *Codegen, node: *Node, fun: *Fn) !void {
     const let = &node.data.let_stmt;
-    const name = self.ast.file_table.spanStr(
+    const name = self.file_table.spanStr(
         self.ast.tokens[let.name].file,
         self.ast.tokens[let.name].start,
         self.ast.tokens[let.name].end,
@@ -220,9 +224,8 @@ pub fn nextBlock(self: *Codegen, fun: *Fn) !*Block {
     return fun.addBlock(name);
 }
 
-pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {
-    // TODO: aggregate types
-    return switch (self.ast.types.items[ty].ty) {
+pub fn qbeType(_: *Codegen, ty: Type.Handle) ?qbe.Type {
+    return switch (ty) {
         .i8 => .signed_byte,
         .u8 => .unsigned_byte,
         .i16 => .signed_halfword,
@@ -231,16 +234,15 @@ pub fn qbeType(self: *Codegen, ty: Type.Handle) ?qbe.Type {
         .i64, .u64 => .long,
         .f32 => .single,
         .f64 => .double,
-        .ptr => self.pointer_width,
-        .void, .null => null,
-        else => unreachable, // TODO
+        .void => null,
+        else => unreachable, // TODO: aggregate types
     };
 }
 
 pub fn emitExpr(self: *Codegen, node: *Node, block: *Block) !Instr {
     switch (node.tag) {
         .identifier => {
-            const name = self.ast.file_table.spanStr(
+            const name = self.file_table.spanStr(
                 node.file,
                 node.start,
                 node.end,
@@ -250,7 +252,7 @@ pub fn emitExpr(self: *Codegen, node: *Node, block: *Block) !Instr {
             };
         },
         .integer => {
-            const str_int = self.ast.file_table.spanStr(
+            const str_int = self.file_table.spanStr(
                 node.file,
                 node.start,
                 node.end,

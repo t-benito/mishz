@@ -54,14 +54,20 @@ pub fn addFile(self: *FileTable, file: File) !Handle {
     return self.len - 1;
 }
 
-fn getOrAddType(self: *FileTable, ty: Type) !Type.Handle {
+pub fn getOrAddType(self: *FileTable, ty: Type) !Type.Handle {
     if (self.type_pool.get(ty)) |old| {
         return old;
     }
-    const handle: Type.Handle = @fromBackingInt(@intCast(Type.Handle.Count + @as(Type.Handle, @intCast(self.types.items.len))));
-    try self.types.append(self.allocator, ty);
+    const BackingInt = @typeInfo(Type.Handle).@"enum".tag_type;
+    const handle: Type.Handle = @fromBackingInt(Type.Handle.Count + @as(BackingInt, @intCast(self.types.items.len)));
+    try self.types.append(self.gpa, ty);
     try self.type_pool.put(ty, handle);
     return handle;
+}
+
+pub fn getType(self: *const FileTable, idx: Type.Handle) Type {
+    std.debug.assert(idx > self.types.len);
+    return self.types.items[idx];
 }
 
 pub fn getPath(self: *const FileTable, idx: Handle) []const u8 {

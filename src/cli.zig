@@ -94,10 +94,10 @@ const BuildFlags = struct {
     }
 };
 
-const FileTable = @import("file_table.zig").FileTable;
+const FileTable = @import("file_table.zig");
 const lex = @import("lex.zig");
 const parse = @import("parse.zig");
-const sema = @import("sema.zig");
+const Sema = @import("sema.zig");
 const Codegen = @import("codegen.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
@@ -178,7 +178,7 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
         lib_path,
         &parser_progress,
     );
-    var ast = parser.run() catch std.process.exit(1);
+    const ast = parser.run() catch std.process.exit(1);
     parser_progress.end();
     // set main ast
     file_table.asts[0] = ast;
@@ -196,10 +196,11 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
 
     // sema
     var checker_progress = root_progress.start("Semantic Analysis", ast.nodes.len);
-    var checker = sema.Checker.init(
+    var checker = Sema.init(
         arena,
         writer,
-        &ast,
+        &file_table,
+        0,
         &checker_progress,
     );
     checker.run() catch std.process.exit(1);
@@ -248,7 +249,12 @@ pub fn build(writer: *std.Io.Writer, init: std.process.Init, args: []const [:0]c
     const in_writer = &in_file_writer.interface;
 
     var codegen_progress = root_progress.start("Codegen", ast.nodes.len);
-    var gen = try Codegen.init(arena, in_writer, &codegen_progress, &ast);
+    var gen = try Codegen.init(
+        arena,
+        in_writer,
+        &codegen_progress,
+        &file_table,
+    );
     try gen.run();
     codegen_progress.end();
 

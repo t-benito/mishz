@@ -1,8 +1,7 @@
 const std = @import("std");
 
-const ft = @import("file_table.zig");
-const FileHandle = ft.FileHandle;
-const FileTable = ft.FileTable;
+const FileTable = @import("file_table.zig");
+const FileHandle = FileTable.Handle;
 const Token = @import("lex.zig").Token;
 const Type = @import("type.zig").Type;
 
@@ -111,10 +110,7 @@ pub const Data = union {
     fn_stmt: struct {
         name: Token.Handle,
         params: []*Node,
-        gens: struct {
-            start: Type.Handle,
-            end: Type.Handle,
-        },
+        generics: []Type.Handle,
         body: []*Node,
     },
     param: struct {

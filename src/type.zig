@@ -101,10 +101,7 @@ pub const NamedType = struct {
         start: Token.Handle,
         end: Token.Handle,
     },
-    generics: ?struct {
-        start: Type.Handle,
-        end: Type.Handle,
-    },
+    generics: []const Type.Handle = &.{},
 };
 
 const TypeContext = struct {
@@ -125,7 +122,9 @@ const TypeContext = struct {
 
                 return h.final();
             },
-            .@"struct", .named => Wyhash.hash(tag, mem.asBytes(&key)),
+            .@"struct",
+            .named,
+            => Wyhash.hash(tag, mem.asBytes(&key)),
         };
     }
 
@@ -137,6 +136,9 @@ const TypeContext = struct {
             .slice => |s| s.inner == b.slice.inner,
             .array => |arr| arr.inner == b.array.inner and arr.length == b.array.length,
             .@"fn" => |f| f.return_type == b.@"fn".return_type and std.mem.eql(Type.Handle, f.params, b.@"fn".params),
+            .@"struct",
+            .named,
+            => false,
         };
     }
 };
