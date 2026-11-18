@@ -3,9 +3,9 @@ const mem = std.mem;
 const Wyhash = std.hash.Wyhash;
 const Tag = std.meta.Tag;
 
-const ast = @import("Ast.zig");
+const ast = @import("../Ast.zig");
 const Node = ast.Node;
-const Token = @import("lex.zig").Token;
+const Token = @import("../lex.zig").Token;
 
 pub const Type = union(enum) {
     pub const Handle = enum(u32) {

@@ -3,7 +3,7 @@ const std = @import("std");
 const FileTable = @import("FileTable.zig");
 const FileHandle = FileTable.Handle;
 const Token = @import("lex.zig").Token;
-const Type = @import("Type.zig").Type;
+const Type = @import("Sema/Type.zig").Type;
 
 pub const SourceHandle = u32;
 
@@ -156,16 +156,28 @@ pub const Node = struct {
     end: SourceHandle,
     file: FileHandle,
     ty: ?Type.Handle = null,
+
+    /// Returns the type, if not existant panics
+    pub fn getTy(self: *const Node) Type.Handle {
+        return self.ty orelse std.debug.panic(
+            "node (tag {s}), span {} - {}, file {} got unexpected null type",
+            .{ @tagName(self.tag), self.start, self.end, self.file },
+        );
+    }
 };
 
-test "sizes" {
-    comptime {
-        // heavy, but, it gets the job done
-        std.testing.expect(@sizeOf(Token) == 12) catch std.testing.failPrint("You messed with the sizes!");
-        std.testing.expect(@sizeOf(Node) == 80) catch std.testing.failPrint("You messed with the sizes!");
+comptime {
+    const mode = @import("builtin").mode;
+    testSize(Token, 12);
+    testSize(Node, if (mode == .debug) 88 else 80);
+    testSize(Ast, 32);
+}
 
-        std.testing.expect(@sizeOf(Ast) == 32) catch std.testing.failPrint("You messed with the sizes!");
-    }
+fn testSize(comptime T: type, size: comptime_int) void {
+    std.testing.expect(@sizeOf(T) == size) catch std.testing.failPrint(
+        "You messed with the sizes! expected size {} for type {s}, got {}",
+        .{ size, @typeName(T), @sizeOf(T) },
+    );
 }
 
 pub const Ast = @This();

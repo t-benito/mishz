@@ -5,7 +5,7 @@ const FileHandle = FileTable.Handle;
 
 const Lex_Error = @import("lex.zig").LexError;
 const Parse_Error = @import("parse.zig").ParseError;
-const Sema_Error = @import("Sema.zig").SemaError;
+const Sema_Error = @import("Sema/Sema.zig").SemaError;
 
 pub const ErrorType = union(enum(u8)) {
     ParseError: Parse_Error = 1,

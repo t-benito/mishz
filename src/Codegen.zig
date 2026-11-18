@@ -25,7 +25,7 @@ const Node = Ast.Node;
 const FileTable = @import("FileTable.zig");
 const FileHandle = FileTable.Handle;
 const Token = @import("lex.zig").Token;
-const typet = @import("Type.zig");
+const typet = @import("Sema/Type.zig");
 const Type = typet.Type;
 
 pub const Codegen = @This();
@@ -66,21 +66,15 @@ pub fn init(
         .file = file,
         .globals = ArrayList([]const u8).initCapacity(allocator, 25) catch ArrayList([]const u8).empty,
         .prev = root,
-        .ast = undefined,
+        .ast = &file_table.asts[file].?,
     };
 }
 
 pub fn run(self: *Codegen) !void {
     try self.emitPre();
-    for (self.file_table.asts) |maybeast| {
-        if (maybeast == null)
-            continue;
-        self.ast = &maybeast.?;
-
-        for (maybeast.?.nodes) |node| {
-            try self.emitTopLevel(node, false);
-            self.temp_counter = 0;
-        }
+    for (self.ast.nodes) |node| {
+        try self.emitTopLevel(node, false);
+        self.temp_counter = 0;
     }
     var format_node = self.prev.start("Qbe Format", 0);
     try self.mod.format(self.writer);
@@ -186,7 +180,7 @@ pub fn emitLet(self: *Codegen, node: *Node, fun: *Fn) !void {
     const v = Value{ .temporary = name };
     try block.assignInstr(
         v,
-        self.qbeType(node.ty.?).?,
+        self.qbeType(node.getTy()).?,
         if (let.val) |val|
             try self.emitExpr(val, block)
         else
@@ -206,7 +200,7 @@ pub fn emitIf(self: *Codegen, node: *Node, fun: *Fn) !void {
 
     try block.assignInstr(
         temp,
-        self.qbeType(@"if".cond.ty.?).?,
+        self.qbeType(@"if".cond.getTy()).?,
         try self.emitExpr(@"if".cond, block),
     );
 
@@ -280,7 +274,7 @@ pub fn emitExpr(self: *Codegen, node: *Node, block: *Block) !Instr {
             const bop = &node.data.binary_op;
 
             const lhs = try self.nextTemp();
-            const ty = self.qbeType(bop.left.ty.?).?;
+            const ty = self.qbeType(bop.left.getTy()).?;
 
             try block.assignInstr(
                 lhs,

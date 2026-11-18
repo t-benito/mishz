@@ -4,7 +4,7 @@ const maxInt = std.math.maxInt;
 
 const Token = @import("lex.zig").Token;
 const Ast = @import("Ast.zig");
-const typet = @import("Type.zig");
+const typet = @import("Sema/Type.zig");
 const Type = typet.Type;
 const TypePool = typet.TypePool;
 

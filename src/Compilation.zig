@@ -11,7 +11,7 @@ const log = std.log;
 const FileTable = @import("FileTable.zig");
 const lex = @import("lex.zig");
 const parse = @import("parse.zig");
-const Sema = @import("Sema.zig");
+const Sema = @import("Sema/Sema.zig");
 const Codegen = @import("Codegen.zig");
 const tknprint = @import("tknprint.zig");
 const astprint = @import("astprint.zig");
@@ -69,7 +69,6 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
     const path = args[2];
     const flags = try BuildFlags.parse(writer, if (args.len > 3) args[3..] else &.{});
 
-    const allocator = init.gpa;
     const io = init.io;
     const arena = init.arena.allocator();
 
@@ -86,14 +85,12 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
 
     var buf: [1024]u8 = undefined;
     var reader = file.reader(io, &buf);
-    const source = reader.interface.allocRemaining(allocator, .unlimited) catch |err| {
+    const source = reader.interface.allocRemaining(arena, .unlimited) catch |err| {
         log.err("could not read file '{s}': {}", .{ path, err });
         process.exit(1);
     };
-    defer allocator.free(source);
 
-    const progress_name = try allocator.print("Compile {s}", .{std.fs.path.basename(path)});
-    defer allocator.free(progress_name);
+    const progress_name = try arena.print("Compile {s}", .{std.fs.path.basename(path)});
 
     var root_progress = std.Progress.start(io, .{ .root_name = progress_name });
     defer root_progress.end();
@@ -169,7 +166,7 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
         for (file_table.asts, 0..) |tast, i| {
             if (tast == null)
                 continue;
-            try writer.print("- ast of file {}", .{i});
+            try writer.print("- ast of file {} (path {s})\n", .{ i, file_table.paths[i] });
             try astprint.printAst(tast.?.nodes, 1, writer);
         }
         try writer.flush();
@@ -178,34 +175,71 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
 
     // codegen
     var cwd_dir = Io.Dir.cwd();
+    var target_dir = try cwd_dir.openDir(io, std.fs.path.dirname(total).?, .{});
+
+    var group: Io.Group = .init;
     for (file_table.asts, 0..) |maybeast, i| {
-        if (maybeast != null) {
-            const in_ssa = if (flags.@"emit-qbe") |q|
-                try arena.dupeSentinel(u8, q, 0)
-            else
-                try arena.printSentinel(".temp_{d}.ssa", .{i}, 0);
+        if (maybeast == null)
+            break;
+        const in_ssa = if (flags.@"emit-qbe") |q|
+            try arena.dupeSentinel(u8, q, 0)
+        else
+            try arena.printSentinel(".temp_{d}.ssa", .{i}, 0);
 
-            const out_asm = if (flags.out) |o|
-                try arena.dupeSentinel(u8, o, 0)
-            else
-                try arena.printSentinel(".comp_{d}.s", .{i}, 0);
+        const out_asm = if (flags.out) |o|
+            try arena.dupeSentinel(u8, o, 0)
+        else
+            try arena.printSentinel(".asm_{d}.s", .{i}, 0);
 
-            try codegenFile(
-                arena,
-                in_ssa,
-                out_asm,
-                &cwd_dir,
-                writer,
-                io,
-                &file_table,
-                @intCast(i),
-                &root_progress,
-                flags,
-            );
-        } else break;
+        group.async(io, codegenFileThread, .{
+            init.gpa,
+            in_ssa,
+            out_asm,
+            &target_dir,
+            writer,
+            io,
+            &file_table,
+            @intCast(i),
+            &root_progress,
+            flags,
+        });
     }
+    try group.await(io);
 
     // todo: turn .s to .o and link
+}
+
+fn codegenFileThread(
+    gpa: Allocator,
+    path: [:0]const u8,
+    out: [:0]const u8,
+    dir: *Io.Dir,
+    writer: *Io.Writer,
+    io: Io,
+    file_table: *FileTable,
+    file: FileTable.Handle,
+    root_progress: *const std.Progress.Node,
+    flags: BuildFlags,
+) void {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+
+    codegenFile(
+        arena.allocator(),
+        path,
+        out,
+        dir,
+        writer,
+        io,
+        file_table,
+        file,
+        root_progress,
+        flags,
+    ) catch {
+        writer.print("codegen failed in file: {s}\n", .{file_table.getPath(file)}) catch {};
+        writer.flush() catch {};
+        process.exit(1);
+    };
 }
 
 const compileSsa = @import("qbe_shim.zig").compileSsa;
