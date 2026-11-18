@@ -12,8 +12,6 @@ pub const Tag = enum {
     string,
     false,
     true,
-    /// only exists because i, benito, want to get a working version out faster
-    null,
     identifier,
     builtin,
     property_access,

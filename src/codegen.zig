@@ -109,8 +109,10 @@ pub fn mangleFnName(self: *Codegen, node: *Node) ![]const u8 {
 pub fn emitTopLevel(self: *Codegen, node: *Node, public: bool) !void {
     switch (node.tag) {
         .fn_stmt => try self.emitFn(node, public),
-        .pub_stmt => try self.emitTopLevel(node.data.pub_stmt.stmt, true),
-        .import => {}, // skip
+        .pub_stmt => try self.emitTopLevel(node.data.pub_stmt.stmt, true), // TODO: why is there a seg fault?
+        .import,
+        .import_collection,
+        => {}, // skip
         else => unreachable, // TODO
     }
 }

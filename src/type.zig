@@ -118,7 +118,7 @@ const TypeContext = struct {
                 var h = Wyhash.init(tag);
 
                 h.update(mem.asBytes(&f.return_type));
-                h.update(mem.asBytes(&f.params));
+                h.update(mem.sliceAsBytes(f.params));
 
                 return h.final();
             },

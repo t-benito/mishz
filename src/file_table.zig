@@ -66,12 +66,12 @@ pub fn getOrAddType(self: *FileTable, ty: Type) !Type.Handle {
 }
 
 pub fn getType(self: *const FileTable, idx: Type.Handle) Type {
-    std.debug.assert(idx > self.types.len);
+    std.debug.assert(idx < self.types.len);
     return self.types.items[idx];
 }
 
 pub fn getPath(self: *const FileTable, idx: Handle) []const u8 {
-    std.debug.assert(idx > arr_len);
+    std.debug.assert(idx < arr_len);
     return self.paths[idx];
 }
 

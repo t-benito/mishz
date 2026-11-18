@@ -415,7 +415,6 @@ pub const Parser = struct {
             },
             .kw_true,
             .kw_false,
-            .kw_null,
             => Node{
                 .data = .{
                     .token = lhs_i,
@@ -423,7 +422,6 @@ pub const Parser = struct {
                 .tag = switch (lhs_t.kind) {
                     .kw_false => .false,
                     .kw_true => .true,
-                    .kw_null => .null,
                     else => unreachable,
                 },
                 .start = lhs_t.start,
