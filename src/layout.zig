@@ -3,7 +3,7 @@ const Value = qbe.Value;
 const Instr = qbe.Instr;
 const Block = qbe.Block;
 const TypeDef = qbe.TypeDef;
-const Codegen = @import("codegen.zig").Codegen;
+const Codegen = @import("Codegen.zig");
 const std = @import("std");
 
 pub const Field = struct {

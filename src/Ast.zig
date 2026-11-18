@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const FileTable = @import("file_table.zig");
+const FileTable = @import("FileTable.zig");
 const FileHandle = FileTable.Handle;
 const Token = @import("lex.zig").Token;
-const Type = @import("type.zig").Type;
+const Type = @import("Type.zig").Type;
 
 pub const SourceHandle = u32;
 
@@ -159,13 +159,12 @@ pub const Node = struct {
 };
 
 test "sizes" {
-    // run at compile
     comptime {
         // heavy, but, it gets the job done
-        try std.testing.expect(@sizeOf(Token) == 12);
-        try std.testing.expect(@sizeOf(Node) == 80);
+        std.testing.expect(@sizeOf(Token) == 12) catch std.testing.failPrint("You messed with the sizes!");
+        std.testing.expect(@sizeOf(Node) == 80) catch std.testing.failPrint("You messed with the sizes!");
 
-        try std.testing.expect(@sizeOf(Ast) == 32);
+        std.testing.expect(@sizeOf(Ast) == 32) catch std.testing.failPrint("You messed with the sizes!");
     }
 }
 

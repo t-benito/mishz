@@ -20,12 +20,12 @@ const Field = layoutt.Field;
 const Struct = layoutt.Struct;
 const StructDef = layoutt.Struct.Def;
 
-const Ast = @import("ast.zig");
+const Ast = @import("Ast.zig");
 const Node = Ast.Node;
-const FileTable = @import("file_table.zig");
+const FileTable = @import("FileTable.zig");
 const FileHandle = FileTable.Handle;
 const Token = @import("lex.zig").Token;
-const typet = @import("type.zig");
+const typet = @import("Type.zig");
 const Type = typet.Type;
 
 pub const Codegen = @This();
@@ -36,11 +36,12 @@ mod: Module,
 pub_link: Linkage,
 priv_link: Linkage,
 file_table: *FileTable,
+file: FileHandle,
 globals: ArrayList([]const u8),
 
 prev: *ProgNode,
 
-/// The current ast
+/// Shorthand for `self.file_table.asts[self.file]`
 ast: *const Ast,
 
 pointer_width: qbe.Type = .long,
@@ -48,7 +49,13 @@ slice_def: ?StructDef = null,
 
 temp_counter: usize = 0,
 
-pub fn init(allocator: Allocator, writer: *std.Io.Writer, root: *ProgNode, file_table: *FileTable) !Codegen {
+pub fn init(
+    allocator: Allocator,
+    writer: *std.Io.Writer,
+    root: *ProgNode,
+    file_table: *FileTable,
+    file: FileHandle,
+) !Codegen {
     return Codegen{
         .allocator = allocator,
         .writer = writer,
@@ -56,6 +63,7 @@ pub fn init(allocator: Allocator, writer: *std.Io.Writer, root: *ProgNode, file_
         .pub_link = .public(),
         .priv_link = .private(),
         .file_table = file_table,
+        .file = file,
         .globals = ArrayList([]const u8).initCapacity(allocator, 25) catch ArrayList([]const u8).empty,
         .prev = root,
         .ast = undefined,

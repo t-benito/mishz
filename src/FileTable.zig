@@ -1,12 +1,12 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const maxInt = std.math.maxInt;
 
 const Token = @import("lex.zig").Token;
-const Ast = @import("ast.zig").Ast;
-const typet = @import("type.zig");
+const Ast = @import("Ast.zig");
+const typet = @import("Type.zig");
 const Type = typet.Type;
 const TypePool = typet.TypePool;
-const Allocator = std.mem.Allocator;
 
 pub const FileTable = @This();
 /// A handle (index) to a file, limit defined by `arr_len`
@@ -25,9 +25,9 @@ type_pool: TypePool,
 
 len: Handle = 0,
 
-gpa: std.mem.Allocator,
+gpa: Allocator,
 
-pub fn init(gpa: std.mem.Allocator, main_path: []const u8, main_source: []const u8) Allocator.Error!FileTable {
+pub fn init(gpa: Allocator, main_path: []const u8, main_source: []const u8) Allocator.Error!FileTable {
     var self = FileTable{ .gpa = gpa, .type_pool = .init(gpa) };
     self.paths[0] = main_path;
     try self.pmap.ensureTotalCapacity(gpa, arr_len);

@@ -1,6 +1,6 @@
 const std = @import("std");
-const astt = @import("ast.zig");
-const Node = astt.Node;
+const Ast = @import("Ast.zig");
+const Node = Ast.Node;
 
 /// Writer must be flushed afterwards
 pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !void {

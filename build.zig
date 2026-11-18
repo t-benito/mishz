@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const options = b.addOptions();
-    options.addOption([]const u8, "version", "0.0.2ye");
+    options.addOption([]const u8, "version", "0.0.2yi");
 
     const exe = b.addExecutable(.{
         .name = "mishz",
@@ -43,13 +43,13 @@ pub fn build(b: *std.Build) void {
     qbe_bmod.addCSourceFiles(.{
         .root = qbe_root.path(b, ""),
         .files = &.{
-            "main.c",       "util.c",       "parse.c",      "abi.c",        "cfg.c",
-            "mem.c",        "ssa.c",        "alias.c",      "load.c",       "copy.c",
-            "fold.c",       "gcm.c", "gvn.c", "ifopt.c",      "simpl.c",      "live.c",       "spill.c",
-            "rega.c",       "emit.c",
-            "amd64/targ.c", "amd64/sysv.c", "amd64/isel.c", "amd64/emit.c", "amd64/winabi.c",
-            "arm64/targ.c", "arm64/abi.c",  "arm64/isel.c", "arm64/emit.c",
-            "rv64/targ.c",  "rv64/abi.c",   "rv64/isel.c",  "rv64/emit.c",
+            "main.c",       "util.c",       "parse.c",      "abi.c",          "cfg.c",
+            "mem.c",        "ssa.c",        "alias.c",      "load.c",         "copy.c",
+            "fold.c",       "gcm.c",        "gvn.c",        "ifopt.c",        "simpl.c",
+            "live.c",       "spill.c",      "rega.c",       "emit.c",         "amd64/targ.c",
+            "amd64/sysv.c", "amd64/isel.c", "amd64/emit.c", "amd64/winabi.c", "arm64/targ.c",
+            "arm64/abi.c",  "arm64/isel.c", "arm64/emit.c", "rv64/targ.c",    "rv64/abi.c",
+            "rv64/isel.c",  "rv64/emit.c",
         },
         .flags = &.{
             "-std=c99",
@@ -58,17 +58,16 @@ pub fn build(b: *std.Build) void {
     });
 
     const wf = b.addWriteFiles();
-    _ = wf.add("config.h", b.fmt("#define Deftgt {s}\n", .{
-        switch (target.result.cpu.arch) {
-            .aarch64 => if (target.result.os.tag.isDarwin()) "T_arm64_apple" else "T_arm64",
-            .riscv64 => "T_rv64",
-            .x86_64 => if (target.result.os.tag == .windows)
-                            "T_amd64_win"
-                        else if (target.result.os.tag.isDarwin())
-                            "T_amd64_apple"
-                        else
-                            "T_amd64_sysv",
-            else => @panic("wrong build target for qbe"),
+    _ = wf.add("config.h", b.fmt("#define Deftgt {s}\n", .{switch (target.result.cpu.arch) {
+        .aarch64 => if (target.result.os.tag.isDarwin()) "T_arm64_apple" else "T_arm64",
+        .riscv64 => "T_rv64",
+        .x86_64 => if (target.result.os.tag == .windows)
+            "T_amd64_win"
+        else if (target.result.os.tag.isDarwin())
+            "T_amd64_apple"
+        else
+            "T_amd64_sysv",
+        else => @panic("wrong build target for qbe"),
     }}));
     qbe_bmod.addIncludePath(wf.getDirectory());
 

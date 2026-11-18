@@ -3,7 +3,7 @@ const mem = std.mem;
 const Wyhash = std.hash.Wyhash;
 const Tag = std.meta.Tag;
 
-const ast = @import("ast.zig");
+const ast = @import("Ast.zig");
 const Node = ast.Node;
 const Token = @import("lex.zig").Token;
 

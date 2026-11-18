@@ -5,20 +5,19 @@ const Allocator = mem.Allocator;
 const Io = std.Io;
 const ProgNode = std.Progress.Node;
 
-const ast = @import("ast.zig");
-const Node = ast.Node;
-const Tag = ast.Tag;
-const Ast = ast.Ast;
-const Checker = @import("sema.zig");
+const Ast = @import("Ast.zig");
+const Node = Ast.Node;
+const Tag = Ast.Tag;
+const Sema = @import("Sema.zig");
 const err = @import("error.zig");
 const ErrorLogger = err.ErrorLogger;
 const Error = err.Error;
 const ErrorType = err.ErrorType;
-const FileTable = @import("file_table.zig");
+const FileTable = @import("FileTable.zig");
 const FileHandle = FileTable.Handle;
 const lex = @import("lex.zig");
 const Token = lex.Token;
-const typet = @import("type.zig");
+const typet = @import("Type.zig");
 const Type = typet.Type;
 const TypePool = typet.TypePool;
 
@@ -1557,7 +1556,7 @@ pub const Parser = struct {
         );
         self.file_table.asts[handle] = try parser.run();
 
-        var checker = Checker.init(
+        var checker = Sema.init(
             self.allocator,
             self.writer,
             self.file_table,

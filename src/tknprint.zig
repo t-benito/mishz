@@ -1,7 +1,7 @@
 const std = @import("std");
 const lex = @import("lex.zig");
 const Token = lex.Token;
-const FileTable = @import("file_table.zig").FileTable;
+const FileTable = @import("FileTable.zig").FileTable;
 
 pub fn print(tokens: []const Token, file_table: *FileTable, writer: *std.Io.Writer) !void {
     for (tokens) |tkn| {
