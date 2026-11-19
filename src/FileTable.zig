@@ -14,12 +14,15 @@ pub const Handle = u24;
 
 pub const arr_len = maxInt(Handle) + 1;
 
-paths: [arr_len][]const u8 = undefined,
+pub const File = struct {
+    path: []const u8,
+    source: []const u8,
+    ast: ?Ast = null,
+};
+
+files: std.MultiArrayList(File) = .empty,
+
 pmap: std.StringHashMapUnmanaged(Handle) = .empty,
-
-sources: [arr_len][]const u8 = undefined,
-asts: [arr_len]?Ast = @splat(null),
-
 types: std.ArrayList(Type) = .empty,
 type_pool: TypePool,
 
@@ -28,28 +31,22 @@ len: Handle = 0,
 gpa: Allocator,
 
 pub fn init(gpa: Allocator, main_path: []const u8, main_source: []const u8) Allocator.Error!FileTable {
-    var self = FileTable{ .gpa = gpa, .type_pool = .init(gpa) };
-    self.paths[0] = main_path;
-    try self.pmap.ensureTotalCapacity(gpa, arr_len);
-    try self.types.ensureTotalCapacity(gpa, Type.Handle.Count * 5);
+    var self = FileTable{
+        .gpa = gpa,
+        .type_pool = .init(gpa),
+    };
+    try self.files.append(gpa, File{
+        .path = main_path,
+        .source = main_source,
+    });
 
-    self.sources[0] = main_source;
     self.len = 1;
     return self;
 }
 
-// virtual only for the function
-pub const File = struct {
-    path: []const u8,
-    source: []const u8,
-    ast: ?Ast = null,
-};
-
 pub fn addFile(self: *FileTable, file: File) !Handle {
-    self.paths[self.len] = file.path;
     try self.pmap.put(self.gpa, file.path, self.len);
-    self.sources[self.len] = file.source;
-    self.asts[self.len] = file.ast;
+    try self.files.append(self.gpa, file);
     self.len += 1;
     return self.len - 1;
 }
@@ -66,13 +63,12 @@ pub fn getOrAddType(self: *FileTable, ty: Type) !Type.Handle {
 }
 
 pub fn getType(self: *const FileTable, idx: Type.Handle) Type {
-    std.debug.assert(idx < self.types.len);
-    return self.types.items[idx];
+    return self.types.items[@intCast(@backingInt(idx))];
 }
 
 pub fn getPath(self: *const FileTable, idx: Handle) []const u8 {
     std.debug.assert(idx < arr_len);
-    return self.paths[idx];
+    return self.files.get(idx).path;
 }
 
 pub fn fromPath(self: *const FileTable, path: []const u8) ?Handle {
@@ -81,16 +77,16 @@ pub fn fromPath(self: *const FileTable, path: []const u8) ?Handle {
 
 pub fn getSource(self: *const FileTable, idx: Handle) []const u8 {
     std.debug.assert(idx < arr_len);
-    return self.sources[idx];
+    return self.files.get(idx).source;
 }
 
 pub fn spanStr(self: *const FileTable, file_id: Handle, start: usize, end: usize) []const u8 {
-    const source = self.sources[file_id];
+    const source = self.getSource(file_id);
     return source[start..end];
 }
 
 pub fn tokenStr(self: *const FileTable, token: Token, file: Handle) []const u8 {
     std.debug.assert(file < arr_len);
-    const source = self.sources[file];
+    const source = self.getSource(file);
     return source[token.start..token.end];
 }

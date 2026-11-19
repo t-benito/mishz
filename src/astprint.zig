@@ -100,9 +100,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
                 }
                 try writer.writeAll("\n");
 
-                if (node.data.let_stmt.val) |val| {
-                    try printAst((&val)[0..1], child_indent, writer);
-                }
+                try printAst((&node.data.let_stmt.val)[0..1], child_indent, writer);
             },
             .fn_stmt => {
                 try printIndent(child_indent, writer);

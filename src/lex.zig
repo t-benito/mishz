@@ -131,8 +131,9 @@ pub const LexError = enum(u8) {
     UnknownDirective = 1,
     UnclosedStringLiteral = 2,
     UnclosedStringIdentifier = 3,
-    InvalidEscape = 4,
-    ReservedUsage = 5,
+    InvalidIdentifier = 4,
+    InvalidEscape = 5,
+    ReservedUsage = 6,
 };
 
 pub const Lexer = struct {
@@ -242,9 +243,24 @@ pub const Lexer = struct {
                 _ = self.advance();
                 _ = self.advance();
                 var got = false;
+                var first = true;
+                var valid = true;
+
                 while (!self.isAtEnd() and !got) {
-                    if (self.advance() == '"')
+                    const c = self.advance();
+                    if (c == '"') {
                         got = true;
+                    }
+                    if (first) {
+                        if (!std.ascii.isAlphabetic(c) and c != '.' and c != '_') {
+                            valid = false;
+                        }
+                        first = false;
+                    } else {
+                        if (!std.ascii.isAlphanumeric(c) and c != '.' and c != '_' and c != '$') {
+                            valid = false;
+                        }
+                    }
                 }
                 if (!got) {
                     try self.logger.add(.{
@@ -255,6 +271,24 @@ pub const Lexer = struct {
                     });
                     continue;
                 }
+                if (first) {
+                    try self.logger.add(.{
+                        .kind = .{ .LexError = .InvalidIdentifier },
+                        .message = "string identifier cannot be empty",
+                        .start = start,
+                        .end = self.current,
+                    });
+                    continue;
+                }
+                if (!valid) {
+                    try self.logger.add(.{
+                        .kind = .{ .LexError = .InvalidIdentifier },
+                        .message = "string identifiers can only contain letters, digits, '.', '_' and '$', not starting with '$' or a digit",
+                        .start = start,
+                        .end = self.current,
+                    });
+                }
+
                 if (std.mem.startsWith(
                     u8,
                     self.file_table.spanStr(self.file_id, start + 2, self.current - 1),

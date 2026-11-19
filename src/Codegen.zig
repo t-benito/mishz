@@ -66,7 +66,7 @@ pub fn init(
         .file = file,
         .globals = ArrayList([]const u8).initCapacity(allocator, 25) catch ArrayList([]const u8).empty,
         .prev = root,
-        .ast = &file_table.asts[file].?,
+        .ast = &file_table.files.items(.ast)[file].?,
     };
 }
 
@@ -166,14 +166,7 @@ pub fn emitLet(self: *Codegen, node: *Node, fun: *Fn) !void {
     try block.assignInstr(
         v,
         self.qbeType(node.getTy()).?,
-        if (let.val) |val|
-            try self.emitExpr(val, block)
-        else
-            .{
-                .copy = .{
-                    .@"const" = 0,
-                },
-            },
+        try self.emitExpr(let.val, block),
     );
 }
 

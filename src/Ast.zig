@@ -103,7 +103,7 @@ pub const Data = union {
     },
     let_stmt: struct {
         name: Token.Handle,
-        val: ?*Node,
+        val: *Node,
     },
     fn_stmt: struct {
         name: Token.Handle,

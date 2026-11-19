@@ -137,10 +137,10 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
     const ast = parser.run() catch process.exit(1);
     parser_progress.end();
     // set main ast
-    file_table.asts[0] = ast;
+    file_table.files.items(.ast)[0] = ast;
 
     if (flags.ast) {
-        for (file_table.asts, 0..) |tast, i| {
+        for (file_table.files.items(.ast), 0..) |tast, i| {
             if (tast == null)
                 continue;
             try writer.print("- ast of file {}\n", .{i});
@@ -163,10 +163,10 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
     checker_progress.end();
 
     if (flags.typedast) {
-        for (file_table.asts, 0..) |tast, i| {
+        for (file_table.files.items(.ast), 0..) |tast, i| {
             if (tast == null)
                 continue;
-            try writer.print("- ast of file {} (path {s})\n", .{ i, file_table.paths[i] });
+            try writer.print("- ast of file {} (path {s})\n", .{ i, file_table.getPath(@intCast(i)) });
             try astprint.printAst(tast.?.nodes, 1, writer);
         }
         try writer.flush();
@@ -178,7 +178,7 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
     var target_dir = try cwd_dir.openDir(io, std.fs.path.dirname(total).?, .{});
 
     var group: Io.Group = .init;
-    for (file_table.asts, 0..) |maybeast, i| {
+    for (file_table.files.items(.ast), 0..) |maybeast, i| {
         if (maybeast == null)
             break;
         const in_ssa = if (flags.@"emit-qbe") |q|
@@ -256,14 +256,13 @@ fn codegenFile(
     root_progress: *const std.Progress.Node,
     flags: BuildFlags,
 ) !void {
-    std.debug.assert(file_table.asts.len > file);
     var in_file: Io.File = try dir.createFile(io, path, .{});
 
     var in_buf: [4096]u8 = undefined;
     var in_file_writer = in_file.writer(io, &in_buf);
     const in_writer = &in_file_writer.interface;
 
-    const ast = &file_table.asts[file].?;
+    const ast = &file_table.files.items(.ast)[file].?;
 
     const prog_name = try arena.print("Codegen: File {}", .{file});
     var codegen_progress = root_progress.start(prog_name, ast.nodes.len);

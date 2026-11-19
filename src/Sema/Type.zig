@@ -1,11 +1,14 @@
 const std = @import("std");
 const mem = std.mem;
+const Allocator = mem.Allocator;
+const Writer = std.Io.Writer;
 const Wyhash = std.hash.Wyhash;
 const Tag = std.meta.Tag;
 
 const ast = @import("../Ast.zig");
 const Node = ast.Node;
 const Token = @import("../lex.zig").Token;
+const FileTable = @import("../FileTable.zig");
 
 pub const Type = union(enum) {
     pub const Handle = enum(u32) {
@@ -55,6 +58,57 @@ pub const Type = union(enum) {
 
         pub inline fn isCompound(self: Handle) bool {
             return @backingInt(self) >= 12;
+        }
+
+        pub fn primitiveName(self: Handle) ?[]const u8 {
+            if (self.isCompound())
+                return null;
+            return @tagName(self);
+        }
+
+        pub fn writeName(
+            self: Handle,
+            file_table: *const FileTable,
+            writer: *Writer,
+        ) !void {
+            if (self.primitiveName()) |prim| {
+                try writer.writeAll(prim);
+                return;
+            }
+
+            const ty = file_table.getType(self);
+            switch (ty) {
+                .ptr => |p| {
+                    try writer.writeByte('*');
+                    try p.inner.writeName(file_table, writer);
+                },
+                .slice => |s| {
+                    try writer.writeAll("[]");
+                    try s.inner.writeName(file_table, writer);
+                },
+                .array => |a| {
+                    try writer.print("[{}]", .{a.length});
+                    try a.inner.writeName(file_table, writer);
+                },
+                .@"struct" => |st| try writer.writeAll(st.name),
+                .named, .@"fn" => unreachable, // TODO
+            }
+        }
+
+        pub fn allocName(
+            self: Handle,
+            file_table: *const FileTable,
+            allocator: Allocator,
+        ) ![]const u8 {
+            var list = try std.ArrayList(u8).initCapacity(allocator, 24);
+            var wr = std.Io.Writer.Allocating.fromArrayList(allocator, &list);
+            defer wr.deinit();
+
+            const writer = &wr.writer;
+            try self.writeName(file_table, writer);
+
+            list = wr.toArrayList();
+            return list.toOwnedSlice(allocator);
         }
     };
 

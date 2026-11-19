@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const Io = std.Io;
+const Writer = Io.Writer;
 const ProgNode = std.Progress.Node;
 
 const Ast = @import("../Ast.zig");
@@ -26,7 +27,7 @@ pub const SemaError = enum(u8) {
     AlreadyDefined = 1,
 };
 
-const Err = error{SemaError} || Allocator.Error;
+const Err = error{SemaError} || Allocator.Error || Writer.Error;
 
 pub const Sema = @This();
 
@@ -45,7 +46,7 @@ pub fn init(allocator: Allocator, writer: *Io.Writer, file_table: *FileTable, fi
     return Sema{
         .allocator = allocator,
         .writer = writer,
-        .ast = &file_table.asts[file].?,
+        .ast = &file_table.files.items(.ast)[file].?,
         .logger = .init(allocator, file_table, file),
         .file_table = file_table,
         .file = file,
@@ -80,9 +81,13 @@ pub fn run(self: *Sema) !void {
     for (self.ast.nodes) |node| {
         try self.precheckTop(node);
     }
+
+    for (self.ast.nodes) |node| {
+        try self.checkTop(node);
+    }
 }
 
-pub fn precheckTop(self: *Sema, node: *Node) Err!void {
+fn precheckTop(self: *Sema, node: *Node) Err!void {
     switch (node.tag) {
         .fn_stmt => {
             const name = self.file_table.tokenStr(
@@ -96,6 +101,75 @@ pub fn precheckTop(self: *Sema, node: *Node) Err!void {
                 .mut = false, // func never mut
             }, node);
         },
+        .import => {},
         else => unreachable, // TODO
     }
+}
+
+fn checkTop(self: *Sema, node: *Node) Err!void {
+    switch (node.tag) {
+        .fn_stmt => {
+            const prev_scope = self.scope;
+            self.scope = .{
+                .parent = &prev_scope,
+                .kind = .{ .function = node.getTy() },
+            };
+            defer self.scope = prev_scope;
+
+            for (node.data.fn_stmt.body) |stmt| {
+                try self.checkStmt(stmt);
+            }
+        },
+        .import => {}, // should aready be handled in precheck?
+        else => unreachable, // TODO
+    }
+}
+
+fn checkStmt(self: *Sema, node: *Node) !void {
+    switch (node.tag) {
+        .let_stmt,
+        .let_mut_stmt,
+        => try self.checkLet(node),
+        else => unreachable, // TODO
+    }
+}
+
+fn checkLet(self: *Sema, node: *Node) !void {
+    const let = &node.data.let_stmt;
+    const mut = node.tag == .let_mut_stmt;
+
+    const ty = try self.checkExpr(let.val);
+    if (node.ty != null and ty != node.getTy()) {
+        try self.logger.add(.{
+            .start = node.start,
+            .end = node.end,
+            .kind = .{ .SemaError = .MismatchedTypes },
+            .message = try self.allocator.print(
+                "mismatched type: expected {s}, got {s}",
+                .{
+                    try node.getTy().allocName(self.file_table, self.allocator),
+                    try ty.allocName(self.file_table, self.allocator),
+                },
+            ),
+        });
+        return error.SemaError;
+    }
+
+    if (node.ty == null)
+        node.ty = ty;
+
+    const name = self.file_table.tokenStr(self.ast.tokens[let.name], self.file);
+    try self.define(name, .{
+        .root = let.name,
+        .kind = .variable,
+        .ty = node.getTy(),
+        .mut = mut,
+    }, node);
+}
+
+fn checkExpr(self: *Sema, node: *Node) !Type.Handle {
+    // TODO
+    _ = self;
+    _ = node;
+    return .i32;
 }

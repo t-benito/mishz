@@ -984,11 +984,8 @@ pub const Parser = struct {
             ty = try self.parseType(previous);
         }
 
-        var val: ?*Node = null;
-        if (self.matches(.assign)) {
-            _ = self.advance();
-            val = try self.parseExpr(0, previous);
-        }
+        _ = try self.expect(.assign);
+        const val = try self.parseExpr(0, previous);
 
         const node = try self.allocator.create(Node);
         node.* = Node{
@@ -1518,7 +1515,7 @@ pub const Parser = struct {
             self.lib_dir,
             prev,
         );
-        self.file_table.asts[handle] = try parser.run();
+        self.file_table.files.items(.ast)[handle] = try parser.run();
 
         var checker = Sema.init(
             self.allocator,
