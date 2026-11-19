@@ -94,20 +94,6 @@ pub fn emitPre(self: *Codegen) !void {
     );
 }
 
-pub fn mangleFnName(self: *Codegen, node: *Node) ![]const u8 {
-    const start = self.ast.tokens[node.data.fn_stmt.name].start;
-    const end = self.ast.tokens[node.data.fn_stmt.name].end;
-    const name = self.file_table.spanStr(
-        node.file,
-        start,
-        end,
-    );
-    return if (node.file == 0)
-        name
-    else
-        try self.allocator.print("___.f{}.{s}", .{ node.file, name });
-}
-
 pub fn emitTopLevel(self: *Codegen, node: *Node, public: bool) !void {
     switch (node.tag) {
         .fn_stmt => try self.emitFn(node, public),
@@ -128,10 +114,10 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
     );
     for (fun.params) |param| {
         const arg = Arg{
-            .ty = self.qbeType(param.ty.?).?,
+            .ty = self.qbeType(param.getTy()).?,
             .val = .{
                 .temporary = self.file_table.spanStr(
-                    param.file,
+                    self.file,
                     param.start,
                     param.end,
                 ),
@@ -139,11 +125,11 @@ pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
         };
         try args.append(self.allocator, arg);
     }
-    const qbe_type = self.qbeType(node.ty.?);
+    const qbe_type = self.qbeType(node.getTy());
 
     const qbe_fn = try self.mod.addFunction(Fn.init(
         if (public) self.pub_link else self.priv_link,
-        try self.mangleFnName(node),
+        self.file_table.tokenStr(self.ast.tokens[fun.name], self.file),
         try args.toOwnedSlice(self.allocator),
         qbe_type,
         self.allocator,
@@ -170,10 +156,9 @@ pub fn emitStmt(self: *Codegen, node: *Node, fun: *Fn) !void {
 
 pub fn emitLet(self: *Codegen, node: *Node, fun: *Fn) !void {
     const let = &node.data.let_stmt;
-    const name = self.file_table.spanStr(
-        self.ast.tokens[let.name].file,
-        self.ast.tokens[let.name].start,
-        self.ast.tokens[let.name].end,
+    const name = self.file_table.tokenStr(
+        self.ast.tokens[let.name],
+        self.file,
     );
     const block = try fun.lastBlock();
 
@@ -247,7 +232,7 @@ pub fn emitExpr(self: *Codegen, node: *Node, block: *Block) !Instr {
     switch (node.tag) {
         .identifier => {
             const name = self.file_table.spanStr(
-                node.file,
+                self.file,
                 node.start,
                 node.end,
             );
@@ -257,7 +242,7 @@ pub fn emitExpr(self: *Codegen, node: *Node, block: *Block) !Instr {
         },
         .integer => {
             const str_int = self.file_table.spanStr(
-                node.file,
+                self.file,
                 node.start,
                 node.end,
             );

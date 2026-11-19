@@ -1,22 +1,24 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const StringHashMapUnmanaged = std.StringHashMapUnmanaged;
 
 const typet = @import("Type.zig");
 const Type = typet.Type;
 
 const Token = @import("../lex.zig").Token;
+const ErrorLogger = @import("../error.zig").ErrorLogger;
 
 pub const Symbol = @This();
 
 pub const Scope = struct {
-    parent: ?*const Scope,
+    parent: ?*const Scope = null,
     symbols: StringHashMapUnmanaged(Symbol) = .empty,
-    kind: Kind,
+    kind: Scope.Kind = .{ .root = 0 },
 
     pub const Kind = union {
-        root: null,
+        root: u0,
         function: Type.Handle,
-        loop: null,
+        loop: u0,
     };
 
     pub fn lookup(self: *const Scope, target: []const u8) ?Symbol {
@@ -28,9 +30,26 @@ pub const Scope = struct {
         }
         return null;
     }
+
+    /// Panics if there is none since thats a compiler bug
+    pub fn enclosingFn(self: *const Scope) *Scope {
+        var curr: ?*const Scope = self;
+        while (curr) |s| : (curr = s.parent) {
+            if (s.kind != .function)
+                return;
+            return s;
+        }
+    }
+
+    pub fn define(self: *Scope, name: []const u8, sym: Symbol, allocator: Allocator) !void {
+        if (self.lookup(name) != null) {
+            return error.AlreadyDefined;
+        }
+        try self.symbols.put(allocator, name, sym);
+    }
 };
 
-name: []const u8,
+//name: []const u8,
 ty: Type.Handle,
 kind: Kind,
 mut: bool = false,

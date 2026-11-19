@@ -154,14 +154,13 @@ pub const Node = struct {
     tag: Tag,
     start: SourceHandle,
     end: SourceHandle,
-    file: FileHandle,
     ty: ?Type.Handle = null,
 
     /// Returns the type, if not existant panics
     pub fn getTy(self: *const Node) Type.Handle {
         return self.ty orelse std.debug.panic(
-            "node (tag {s}), span {} - {}, file {} got unexpected null type",
-            .{ @tagName(self.tag), self.start, self.end, self.file },
+            "node (tag {s}), span {} - {} got unexpected null type",
+            .{ @tagName(self.tag), self.start, self.end },
         );
     }
 };

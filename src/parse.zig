@@ -70,7 +70,7 @@ pub const Parser = struct {
             .tokens = tokens,
             .allocator = allocator,
             .io = io,
-            .logger = .init(file_table),
+            .logger = .init(allocator, file_table, file),
             .writer = writer,
             .lib_dir = lib_dir,
             .root_node = progress,
@@ -110,11 +110,10 @@ pub const Parser = struct {
             },
         );
         self.current -= 1;
-        try self.logger.add(self.allocator, Error{
+        try self.logger.add(.{
             .message = fmt,
             .start = t.start,
             .end = t.end,
-            .file = t.file,
             .kind = .{ .ParseError = .UnexpectedToken },
         });
         self.current += 1;
@@ -136,11 +135,10 @@ pub const Parser = struct {
                 describeKind(t.kind),
             },
         );
-        try self.logger.add(self.allocator, Error{
+        try self.logger.add(Error{
             .message = fmt,
             .start = t.start,
             .end = t.start,
-            .file = t.file,
             .kind = .{ .ParseError = .UnexpectedToken },
         });
         self.current += 1;
@@ -290,11 +288,10 @@ pub const Parser = struct {
             .kw_fn => return try self.parseFn(&top_node),
             else => {
                 const found_top = self.peek();
-                try self.logger.add(self.allocator, .{
+                try self.logger.add(.{
                     .kind = .{ .ParseError = .ExpectedTopLevelStatement },
                     .start = found_top.start,
                     .end = self.next().end,
-                    .file = found_top.file,
                     .message = try self.allocator.print(
                         "expected a top-level statement ('fn', 'let', 'struct' or 'pub'), found '{s}'",
                         .{
@@ -338,7 +335,6 @@ pub const Parser = struct {
                     .tag = .block,
                     .start = start.start,
                     .end = self.peek().end,
-                    .file = start.file,
                 };
                 _ = try self.expect(.close_body);
                 return node;
@@ -410,7 +406,6 @@ pub const Parser = struct {
                 .tag = .integer,
                 .start = lhs_t.start,
                 .end = lhs_t.end,
-                .file = lhs_t.file,
             },
             .kw_true,
             .kw_false,
@@ -425,7 +420,6 @@ pub const Parser = struct {
                 },
                 .start = lhs_t.start,
                 .end = lhs_t.end,
-                .file = lhs_t.file,
             },
             .string_literal => Node{
                 .data = .{
@@ -434,7 +428,6 @@ pub const Parser = struct {
                 .tag = .string,
                 .start = lhs_t.start,
                 .end = lhs_t.end,
-                .file = lhs_t.file,
             },
             .identifier => Node{
                 .data = .{
@@ -443,7 +436,6 @@ pub const Parser = struct {
                 .tag = .identifier,
                 .start = lhs_t.start,
                 .end = lhs_t.end,
-                .file = lhs_t.file,
             },
             .at => {
                 const name_tok_i = self.current;
@@ -471,7 +463,6 @@ pub const Parser = struct {
                     .tag = .builtin,
                     .start = lhs_t.start,
                     .end = close_p.end,
-                    .file = close_p.file,
                 };
             },
             .open_paren => {
@@ -497,15 +488,13 @@ pub const Parser = struct {
                     .tag = tag,
                     .start = lhs_t.start,
                     .end = expr.end,
-                    .file = expr.file,
                 };
             },
             else => {
-                try self.logger.add(self.allocator, .{
+                try self.logger.add(.{
                     .kind = .{ .ParseError = .ExpectedExpression },
                     .start = lhs_t.start,
                     .end = lhs_t.end,
-                    .file = lhs_t.file,
                     .message = try self.allocator.print(
                         "expected an expression, found '{s}'",
                         .{describeKind(lhs_t.kind)},
@@ -529,7 +518,6 @@ pub const Parser = struct {
                     lhs.* = Node{
                         .start = old.start,
                         .end = self.peek().end,
-                        .file = old.file,
                         .ty = ty,
                         .tag = .cast,
                         .data = .{
@@ -555,7 +543,6 @@ pub const Parser = struct {
                         .tag = .property_access,
                         .start = old.start,
                         .end = target.end,
-                        .file = old.file,
                     };
                 },
                 .open_paren => {
@@ -587,7 +574,6 @@ pub const Parser = struct {
                         .tag = .call,
                         .start = old.start,
                         .end = end.end,
-                        .file = old.file,
                     };
                 },
                 .open_body => {
@@ -616,7 +602,6 @@ pub const Parser = struct {
                             .tag = .field_init,
                             .start = self.tokens[sstart].start,
                             .end = v.end,
-                            .file = v.file,
                         };
                         try fields.append(self.allocator, n);
 
@@ -639,7 +624,6 @@ pub const Parser = struct {
                         .tag = .struct_init,
                         .start = start.start,
                         .end = self.peek().end,
-                        .file = start.file,
                     };
                 },
                 .assign,
@@ -671,7 +655,6 @@ pub const Parser = struct {
                         .tag = tag,
                         .start = old.start,
                         .end = val.end,
-                        .file = old.file,
                     };
                 },
                 .increment,
@@ -695,7 +678,6 @@ pub const Parser = struct {
                         .tag = tag,
                         .start = old.start,
                         .end = op.end,
-                        .file = old.file,
                     };
                 },
                 .open_bracket,
@@ -717,7 +699,6 @@ pub const Parser = struct {
                         .tag = .array_access,
                         .start = old.start,
                         .end = self.peek().end,
-                        .file = old.file,
                     };
                 },
                 else => {
@@ -756,7 +737,6 @@ pub const Parser = struct {
                         .tag = tag,
                         .start = old.start,
                         .end = rhs.end,
-                        .file = old.file,
                     };
                 },
             }
@@ -874,14 +854,13 @@ pub const Parser = struct {
                 }
             },
             else => {
-                try self.logger.add(self.allocator, .{
+                try self.logger.add(.{
                     .start = base_t.start,
                     .end = base_t.end,
-                    .file = base_t.file,
                     .kind = .{ .ParseError = .UnexpectedTypeToken },
                     .message = try self.allocator.print(
                         "expected type expression, found '{s}'",
-                        .{self.file_table.tokenStr(self.peek())},
+                        .{self.file_table.tokenStr(self.peek(), self.file)},
                     ),
                 });
                 return error.ParseError;
@@ -951,7 +930,6 @@ pub const Parser = struct {
             node.* = Node{
                 .start = self.tokens[pname].start,
                 .end = self.peek().end,
-                .file = self.tokens[pname].file,
                 .ty = pty,
                 .tag = .param,
                 .data = .{
@@ -974,7 +952,6 @@ pub const Parser = struct {
         node.* = Node{
             .start = start,
             .end = end.end,
-            .file = end.file,
             .ty = retty,
             .tag = .fn_stmt,
             .data = .{
@@ -1017,7 +994,6 @@ pub const Parser = struct {
         node.* = Node{
             .start = start.start,
             .end = self.peek().end,
-            .file = start.file,
             .ty = ty,
             .tag = if (mut) .let_mut_stmt else .let_stmt,
             .data = .{
@@ -1051,7 +1027,6 @@ pub const Parser = struct {
             .tag = .ret_stmt,
             .start = self.tokens[start].start,
             .end = self.peek().end,
-            .file = self.tokens[start].file,
         };
         return node;
     }
@@ -1080,7 +1055,6 @@ pub const Parser = struct {
                 .tag = .block,
                 .start = self.tokens[sstart].start,
                 .end = self.peek().end,
-                .file = self.tokens[sstart].file,
             };
         } else {
             _ = try self.expectMsg(.colon, "expected ':' or '{' to begin if statement");
@@ -1105,7 +1079,6 @@ pub const Parser = struct {
                     .tag = .block,
                     .start = estart.start,
                     .end = self.peek().end,
-                    .file = estart.file,
                 };
 
                 _ = try self.expect(.close_body);
@@ -1126,7 +1099,6 @@ pub const Parser = struct {
             .tag = .if_stmt,
             .start = self.tokens[start].start,
             .end = self.peek().end,
-            .file = self.tokens[start].file,
         };
         return node;
     }
@@ -1157,7 +1129,6 @@ pub const Parser = struct {
                     .tag = .block,
                     .start = self.tokens[sstart].start,
                     .end = self.peek().end,
-                    .file = self.tokens[sstart].file,
                 };
                 _ = try self.expect(.close_body);
             } else {
@@ -1176,7 +1147,6 @@ pub const Parser = struct {
                 .tag = .for_stmt,
                 .start = start,
                 .end = self.peek().end,
-                .file = body.file,
             };
             return node;
         }
@@ -1199,7 +1169,6 @@ pub const Parser = struct {
                     .tag = .block,
                     .start = self.tokens[sstart].start,
                     .end = self.peek().end,
-                    .file = self.tokens[sstart].file,
                 };
             } else {
                 _ = try self.expect(.colon);
@@ -1218,7 +1187,6 @@ pub const Parser = struct {
                 .tag = .for_stmt,
                 .start = self.tokens[start].start,
                 .end = self.peek().end,
-                .file = self.tokens[start].file,
             };
             return node;
         }
@@ -1255,7 +1223,6 @@ pub const Parser = struct {
                 .tag = .block,
                 .start = self.tokens[sstart].start,
                 .end = self.peek().end,
-                .file = self.tokens[sstart].file,
             };
             _ = try self.expect(.close_body);
         } else {
@@ -1274,7 +1241,6 @@ pub const Parser = struct {
             .tag = .for_stmt,
             .start = start,
             .end = self.peek().end,
-            .file = body.file,
         };
         return node;
     }
@@ -1311,7 +1277,6 @@ pub const Parser = struct {
             node.* = Node{
                 .start = self.tokens[fname].start,
                 .end = self.peek().end,
-                .file = self.tokens[fname].file,
                 .ty = ftype,
                 .tag = .struct_field,
                 .data = .{
@@ -1343,7 +1308,6 @@ pub const Parser = struct {
             .tag = .struct_stmt,
             .start = self.tokens[start].start,
             .end = self.peek().end,
-            .file = self.tokens[start].file,
         };
         return node;
     }
@@ -1354,10 +1318,9 @@ pub const Parser = struct {
 
         const stmt = try self.parseTop();
         if (stmt.tag == .pub_stmt) {
-            try self.logger.add(self.allocator, .{
+            try self.logger.add(.{
                 .start = self.tokens[start].start,
                 .end = self.tokens[start].end,
-                .file = self.tokens[start].file,
                 .kind = .{ .ParseError = .PubTwice },
                 .message = "top level statement cannot be pub twice",
             });
@@ -1368,7 +1331,6 @@ pub const Parser = struct {
         node.* = Node{
             .start = self.tokens[start].start,
             .end = node.end,
-            .file = node.file,
             .tag = .pub_stmt,
             .data = .{
                 .pub_stmt = .{
@@ -1396,7 +1358,11 @@ pub const Parser = struct {
                     const tkni = self.current;
                     const tkn = self.advance();
 
-                    const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+                    const rel_path = self.file_table.spanStr(
+                        self.file,
+                        tkn.start,
+                        tkn.end,
+                    );
                     const abs_path = try std.fs.path.join(self.allocator, &.{
                         self.file_table.getPath(self.file),
                         rel_path,
@@ -1409,7 +1375,11 @@ pub const Parser = struct {
                     const tkn = try self.expectMsg(.identifier, "expected file name");
                     _ = try self.expectMsg(.gt, "expected '>' to close '<'");
 
-                    const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+                    const rel_path = self.file_table.spanStr(
+                        self.file,
+                        tkn.start,
+                        tkn.end,
+                    );
                     const abs_path = try std.fs.path.join(self.allocator, &.{
                         self.lib_dir,
                         rel_path,
@@ -1424,7 +1394,6 @@ pub const Parser = struct {
                 node.* = Node{
                     .start = self.tokens[this_start].start,
                     .end = self.peek().end,
-                    .file = self.tokens[this_start].file,
                     .tag = .import,
                     .data = .{
                         .import_stmt = .{
@@ -1442,7 +1411,6 @@ pub const Parser = struct {
             node.* = Node{
                 .start = self.tokens[start].start,
                 .end = self.tokens[end].end,
-                .file = self.tokens[start].file,
                 .tag = .import_collection,
                 .data = .{
                     .block = .{
@@ -1458,7 +1426,7 @@ pub const Parser = struct {
             const tkni = self.current;
             const tkn = self.advance();
 
-            const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+            const rel_path = self.file_table.tokenStr(tkn, self.file);
             const abs_path = try std.fs.path.join(self.allocator, &.{
                 std.fs.path.dirname(self.file_table.getPath(self.file)).?,
                 rel_path,
@@ -1470,7 +1438,7 @@ pub const Parser = struct {
             const tkn = try self.expectMsg(.identifier, "expected file name");
             _ = try self.expectMsg(.gt, "expected '>' to close '<'");
 
-            const rel_path = self.file_table.spanStr(tkn.file, tkn.start, tkn.end);
+            const rel_path = self.file_table.tokenStr(tkn, self.file);
             const abs_path = try std.fs.path.join(self.allocator, &.{
                 self.lib_dir,
                 rel_path,
@@ -1485,7 +1453,6 @@ pub const Parser = struct {
         node.* = Node{
             .start = self.tokens[start].start,
             .end = self.peek().end,
-            .file = self.tokens[start].file,
             .tag = .import,
             .data = .{
                 .import_stmt = .{
@@ -1504,17 +1471,15 @@ pub const Parser = struct {
 
         const file = std.Io.Dir.openFileAbsolute(self.io, abs_path, .{}) catch |erro| {
             switch (erro) {
-                error.FileNotFound => try self.logger.add(self.allocator, Error{
+                error.FileNotFound => try self.logger.add(Error{
                     .start = self.tokens[tkn].start,
                     .end = self.tokens[tkn].end,
-                    .file = self.tokens[tkn].file,
                     .kind = .{ .ParseError = .ImportFileNotFound },
                     .message = "file not found",
                 }),
-                else => try self.logger.add(self.allocator, Error{
+                else => try self.logger.add(Error{
                     .start = self.tokens[tkn].start,
                     .end = self.tokens[tkn].end,
-                    .file = self.tokens[tkn].file,
                     .kind = .{ .ParseError = .ImportError },
                     .message = try self.allocator.print("could not import file: {s}", .{@errorName(erro)}),
                 }),
@@ -1525,10 +1490,9 @@ pub const Parser = struct {
 
         const ext = std.fs.path.extension(abs_path);
         if (!std.mem.eql(u8, ext, ".msh")) {
-            try self.logger.add(self.allocator, Error{
+            try self.logger.add(Error{
                 .start = self.tokens[tkn].start,
                 .end = self.tokens[tkn].end,
-                .file = self.tokens[tkn].file,
                 .kind = .{ .ParseError = .ImportWrongExt },
                 .message = try self.allocator.print("file must have a .msh extension, got '{s}'", .{ext}),
             });
@@ -1541,8 +1505,8 @@ pub const Parser = struct {
         const source = try reader.interface.allocRemaining(self.allocator, .unlimited);
         const handle = try self.file_table.addFile(.{ .path = abs_path, .source = source });
 
-        var lexer = lex.Lexer.init(handle, self.file_table);
-        const tokens = try lexer.run(self.allocator, self.writer, prev.*);
+        var lexer = lex.Lexer.init(self.allocator, handle, self.file_table);
+        const tokens = try lexer.run(self.writer, prev.*);
 
         var parser = init(
             self.allocator,

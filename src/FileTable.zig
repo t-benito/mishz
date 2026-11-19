@@ -10,7 +10,7 @@ const TypePool = typet.TypePool;
 
 pub const FileTable = @This();
 /// A handle (index) to a file, limit defined by `arr_len`
-pub const Handle = u8;
+pub const Handle = u24;
 
 pub const arr_len = maxInt(Handle) + 1;
 
@@ -89,8 +89,8 @@ pub fn spanStr(self: *const FileTable, file_id: Handle, start: usize, end: usize
     return source[start..end];
 }
 
-pub fn tokenStr(self: *const FileTable, token: Token) []const u8 {
-    std.debug.assert(token.file < self.len);
-    const source = self.sources[token.file];
+pub fn tokenStr(self: *const FileTable, token: Token, file: Handle) []const u8 {
+    std.debug.assert(file < arr_len);
+    const source = self.sources[file];
     return source[token.start..token.end];
 }

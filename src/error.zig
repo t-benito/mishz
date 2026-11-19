@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const FileTable = @import("FileTable.zig");
 const FileHandle = FileTable.Handle;
@@ -17,13 +18,11 @@ pub const Note = struct {
     message: []const u8,
     start: usize,
     end: usize,
-    file: FileHandle,
 };
 
 pub const Error = struct {
     message: []const u8,
     kind: ErrorType,
-    file: FileHandle,
     start: usize,
     end: usize,
     note: ?Note = null,
@@ -37,18 +36,22 @@ const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
 pub const ErrorLogger = struct {
+    allocator: Allocator,
     errors: std.ArrayList(Error),
-    file_table: *FileTable,
+    file_table: *const FileTable,
+    file: FileHandle,
 
-    pub fn init(file_table: *FileTable) ErrorLogger {
+    pub fn init(allocator: Allocator, file_table: *const FileTable, file: FileHandle) ErrorLogger {
         return .{
+            .allocator = allocator,
             .errors = .empty,
             .file_table = file_table,
+            .file = file,
         };
     }
 
-    pub fn add(self: *ErrorLogger, allocator: std.mem.Allocator, err: Error) !void {
-        try self.errors.append(allocator, err);
+    pub fn add(self: *ErrorLogger, err: Error) !void {
+        try self.errors.append(self.allocator, err);
     }
 
     fn writeErr(writer: *std.Io.Writer, kind: ErrorType) !void {
@@ -67,8 +70,8 @@ pub const ErrorLogger = struct {
         if (self.errors.items.len == 0) return false;
 
         for (self.errors.items, 0..) |err, idx| {
-            const source = self.file_table.getSource(err.file);
-            const path = self.file_table.getPath(err.file);
+            const source = self.file_table.getSource(self.file);
+            const path = self.file_table.getPath(self.file);
             if (idx > 0)
                 try writer.print("\n", .{});
 
@@ -85,18 +88,19 @@ pub const ErrorLogger = struct {
                 try writer.print("{s}error{s}: {s} (could not render snippet)\n", .{ RED, RESET, err.message });
             };
             if (err.note) |n| {
-                const nsource = self.file_table.getSource(n.file);
-                const npath = self.file_table.getPath(n.file);
                 render(
                     writer,
-                    nsource,
-                    npath,
+                    source,
+                    path,
                     n.message,
                     n.start,
                     n.end,
                     true,
                     null,
                 ) catch {};
+            }
+            if (err.help) |h| {
+                renderHelp(writer, h) catch {};
             }
         }
         try writer.writeAll("\n");
@@ -192,5 +196,12 @@ pub const ErrorLogger = struct {
                 try writer.writeByte('^');
         }
         try writer.print("{s}\n", .{RESET});
+    }
+
+    fn renderHelp(writer: *std.Io.Writer, help: []const u8) !void {
+        try writer.print(
+            "{s}help{s}{s}:{s} {s}\n",
+            .{ CYAN, RESET, DIM, RESET, help },
+        );
     }
 };

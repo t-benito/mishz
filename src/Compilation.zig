@@ -112,13 +112,13 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
     });
 
     // lexer
-    var lexer = lex.Lexer.init(0, &file_table);
+    var lexer = lex.Lexer.init(arena, 0, &file_table);
     var lexer_progress = root_progress.start("Lexer", source.len / 9 + 3);
-    const tokens = lexer.run(arena, writer, lexer_progress) catch std.process.exit(1);
+    const tokens = lexer.run(writer, lexer_progress) catch std.process.exit(1);
     lexer_progress.end();
 
     if (flags.tokens) {
-        try tknprint.print(tokens, &file_table, writer);
+        try tknprint.print(tokens, 0, &file_table, writer);
         return;
     }
 

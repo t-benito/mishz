@@ -1,11 +1,12 @@
 const std = @import("std");
 const lex = @import("lex.zig");
 const Token = lex.Token;
-const FileTable = @import("FileTable.zig").FileTable;
+const FileTable = @import("FileTable.zig");
+const FileHandle = FileTable.Handle;
 
-pub fn print(tokens: []const Token, file_table: *FileTable, writer: *std.Io.Writer) !void {
+pub fn print(tokens: []const Token, file: FileHandle, file_table: *FileTable, writer: *std.Io.Writer) !void {
     for (tokens) |tkn| {
-        try printTkn(tkn, file_table.getSource(tkn.file), writer);
+        try printTkn(tkn, file_table.getSource(file), writer);
     }
     try writer.flush();
 }
@@ -28,7 +29,6 @@ fn printTkn(token: Token, source: []const u8, writer: *std.Io.Writer) !void {
     for (0..getPadding(20, len)) |_| {
         try writer.writeAll(" ");
     }
-    try writer.print("file id: {}\n", .{token.file});
 }
 
 inline fn getPadding(diff: u8, strlen: usize) usize {

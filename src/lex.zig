@@ -12,7 +12,6 @@ pub const Token = struct {
     start: SourceHandle,
     end: SourceHandle,
     kind: Kind,
-    file: FileHandle,
 
     pub const Kind = enum {
         eof,
@@ -147,8 +146,9 @@ pub const Lexer = struct {
     row: SourceHandle,
 
     logger: ErrorLogger,
+    allocator: std.mem.Allocator,
 
-    pub fn init(file_id: FileHandle, file_table: *FileTable) Lexer {
+    pub fn init(allocator: std.mem.Allocator, file_id: FileHandle, file_table: *FileTable) Lexer {
         return .{
             .file_id = file_id,
             .file_table = file_table,
@@ -156,7 +156,8 @@ pub const Lexer = struct {
             .current = 0,
             .col = 0,
             .row = 0,
-            .logger = .init(file_table),
+            .logger = .init(allocator, file_table, file_id),
+            .allocator = allocator,
         };
     }
 
@@ -185,7 +186,9 @@ pub const Lexer = struct {
         return self.current >= self.source.len;
     }
 
-    pub fn run(self: *Lexer, allocator: std.mem.Allocator, writer: *std.Io.Writer, progress: std.Progress.Node) ![]Token {
+    pub fn run(self: *Lexer, writer: *std.Io.Writer, progress: std.Progress.Node) ![]Token {
+        var allocator = self.allocator;
+
         var inits = progress.start("Initializing", 0);
         var tokens = try std.ArrayList(Token).initCapacity(allocator, self.source.len / 2);
 
@@ -244,12 +247,11 @@ pub const Lexer = struct {
                         got = true;
                 }
                 if (!got) {
-                    try self.logger.add(allocator, .{
+                    try self.logger.add(.{
                         .kind = .{ .LexError = .UnclosedStringIdentifier },
                         .message = "string identifier missing closing \"",
                         .start = start,
                         .end = self.current,
-                        .file = self.file_id,
                     });
                     continue;
                 }
@@ -258,12 +260,11 @@ pub const Lexer = struct {
                     self.file_table.spanStr(self.file_id, start + 2, self.current - 1),
                     "___.",
                 )) {
-                    try self.logger.add(allocator, .{
+                    try self.logger.add(.{
                         .kind = .{ .LexError = .ReservedUsage },
                         .message = "identifiers starting with '___.' are reserved for compiler internals",
                         .start = start,
                         .end = self.current,
-                        .file = self.file_id,
                     });
                 }
 
@@ -271,7 +272,6 @@ pub const Lexer = struct {
                     .start = start + 2,
                     .end = self.current - 1,
                     .kind = .identifier,
-                    .file = self.file_id,
                 });
                 continue;
             }
@@ -282,7 +282,6 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = start,
                     .end = self.current,
-                    .file = self.file_id,
                     .kind = kind,
                 });
                 continue;
@@ -293,7 +292,6 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = start,
                     .end = self.current,
-                    .file = self.file_id,
                     .kind = kind,
                 });
                 continue;
@@ -308,12 +306,11 @@ pub const Lexer = struct {
                         got = true;
                 }
                 if (!got) {
-                    try self.logger.add(allocator, .{
+                    try self.logger.add(.{
                         .kind = .{ .LexError = .UnclosedStringLiteral },
                         .message = "string literal missing closing \"",
                         .start = start,
                         .end = self.current,
-                        .file = self.file_id,
                     });
                     continue;
                 }
@@ -321,7 +318,6 @@ pub const Lexer = struct {
                     .start = start + 1,
                     .end = self.current - 1,
                     .kind = .string_literal,
-                    .file = self.file_id,
                 });
                 continue;
             }
@@ -335,7 +331,6 @@ pub const Lexer = struct {
                     try tokens.append(allocator, .{
                         .start = start,
                         .end = self.current,
-                        .file = self.file_id,
                         .kind = k,
                     });
                     continue;
@@ -343,7 +338,6 @@ pub const Lexer = struct {
                 try tokens.append(allocator, .{
                     .start = start,
                     .end = self.current,
-                    .file = self.file_id,
                     .kind = .identifier,
                 });
                 continue;
@@ -356,7 +350,6 @@ pub const Lexer = struct {
                 try tokens.append(allocator, Token{
                     .start = start,
                     .end = self.current,
-                    .file = self.file_id,
                     .kind = .number_literal,
                 });
                 continue;
@@ -366,18 +359,16 @@ pub const Lexer = struct {
             _ = self.advance();
             const emsg = try allocator.print("unknown character '{c}'", .{bad});
 
-            try self.logger.add(allocator, .{
+            try self.logger.add(.{
                 .message = emsg,
                 .kind = .{ .LexError = LexError.UnknownCharacter },
                 .start = start,
                 .end = self.current,
-                .file = self.file_id,
             });
         }
         try tokens.append(allocator, .{
             .start = @intCast(self.source.len - 1),
             .end = @intCast(self.source.len - 1),
-            .file = @intCast(self.file_id),
             .kind = .eof,
         });
 
