@@ -81,7 +81,7 @@ pub fn printAst(nodes: []const *Node, indent: usize, writer: *std.Io.Writer) !vo
             },
             .import => {
                 try printIndent(child_indent, writer);
-                try writer.print("file index: {}, alias index: {}", .{ node.data.import_stmt.file, node.data.import_stmt.alias });
+                try writer.print("file index: {}, alias index: {}\n", .{ node.data.import_stmt.file, node.data.import_stmt.alias });
             },
             .block, .import_collection => {
                 try printAst(node.data.block.body, child_indent, writer);

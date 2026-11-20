@@ -9,8 +9,8 @@ const Parse_Error = @import("parse.zig").ParseError;
 const Sema_Error = @import("Sema/Sema.zig").SemaError;
 
 pub const ErrorType = union(enum(u8)) {
-    ParseError: Parse_Error = 1,
-    LexError: Lex_Error = 2,
+    LexError: Lex_Error = 1,
+    ParseError: Parse_Error = 2,
     SemaError: Sema_Error = 3,
 };
 
@@ -33,6 +33,7 @@ const RED = "\x1b[1;31m";
 const BLUE = "\x1b[1;34m";
 const CYAN = "\x1b[36m";
 const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
 const RESET = "\x1b[0m";
 
 pub const ErrorLogger = struct {
@@ -62,7 +63,7 @@ pub const ErrorLogger = struct {
             .SemaError => |e| @backingInt(e),
         });
 
-        try writer.print("E{d}", .{_1 * 1000 + _2});
+        try writer.print("E{d}", .{_1 * 255 + _2});
     }
 
     pub fn dump(self: *ErrorLogger, allocator: std.mem.Allocator, writer: *std.Io.Writer) !bool {
@@ -200,8 +201,8 @@ pub const ErrorLogger = struct {
 
     fn renderHelp(writer: *std.Io.Writer, help: []const u8) !void {
         try writer.print(
-            "{s}help{s}{s}:{s} {s}\n",
-            .{ CYAN, RESET, DIM, RESET, help },
+            "{s}{s}help{s}: {s}\n",
+            .{ BOLD, CYAN, RESET, help },
         );
     }
 };

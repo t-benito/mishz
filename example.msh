@@ -1,8 +1,8 @@
 import "test.msh" as test;
 
 fn main() void {
-    let i = 1;
-    let j = i + 2;
-    if j == 3:
-        ret;
+    let sugar = 1;
+    let j = sugra + 2;
+    //if j == 3:
+    //    ret;
 }

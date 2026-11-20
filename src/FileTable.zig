@@ -10,8 +10,9 @@ const TypePool = typet.TypePool;
 
 pub const FileTable = @This();
 /// A handle (index) to a file, limit defined by `arr_len`
-pub const Handle = u24;
+pub const Handle = u32;
 
+// TODO: is this still even needed?
 pub const arr_len = maxInt(Handle) + 1;
 
 pub const File = struct {
@@ -27,7 +28,6 @@ types: std.ArrayList(Type) = .empty,
 type_pool: TypePool,
 
 len: Handle = 0,
-
 gpa: Allocator,
 
 pub fn init(gpa: Allocator, main_path: []const u8, main_source: []const u8) Allocator.Error!FileTable {
@@ -87,6 +87,15 @@ pub fn spanStr(self: *const FileTable, file_id: Handle, start: usize, end: usize
 
 pub fn tokenStr(self: *const FileTable, token: Token, file: Handle) []const u8 {
     std.debug.assert(file < arr_len);
+    const source = self.getSource(file);
+    return source[token.start..token.end];
+}
+
+pub fn tokenHStr(self: *const FileTable, token_handle: Token.Handle, file: Handle) []const u8 {
+    std.debug.assert(file < arr_len);
+    std.debug.assert(self.files.items(.ast)[file] != null);
+    const tokens: []Token = self.files.items(.ast)[file].?.tokens;
+    const token = tokens[token_handle];
     const source = self.getSource(file);
     return source[token.start..token.end];
 }

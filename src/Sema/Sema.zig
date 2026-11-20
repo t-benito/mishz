@@ -25,6 +25,8 @@ const Scope = Symbol.Scope;
 pub const SemaError = enum(u8) {
     MismatchedTypes = 0,
     AlreadyDefined = 1,
+    UnknownIdentifier = 2,
+    NotSupportedType = 3,
 };
 
 const Err = error{SemaError} || Allocator.Error || Writer.Error;
@@ -83,7 +85,11 @@ pub fn run(self: *Sema) !void {
     }
 
     for (self.ast.nodes) |node| {
-        try self.checkTop(node);
+        self.checkTop(node) catch {};
+    }
+
+    if (try self.logger.dump(self.allocator, self.writer)) {
+        return error.sema;
     }
 }
 
@@ -167,9 +173,187 @@ fn checkLet(self: *Sema, node: *Node) !void {
     }, node);
 }
 
-fn checkExpr(self: *Sema, node: *Node) !Type.Handle {
+fn checkExpr(self: *Sema, node: *Node) Err!Type.Handle {
+    switch (node.tag) {
+        .binary_op_add,
+        .binary_op_bit_and,
+        .binary_op_bit_left,
+        .binary_op_bit_not,
+        .binary_op_bit_or,
+        .binary_op_bit_right,
+        .binary_op_bit_xor,
+        .binary_op_div,
+        .binary_op_mul,
+        .binary_op_sub,
+        => return try self.checkBinaryOp(node),
+        .binary_op_eq,
+        .binary_op_not_eq,
+        .binary_op_lt,
+        .binary_op_lt_eq,
+        .binary_op_gt,
+        .binary_op_gt_eq,
+        => return try self.checkComparison(node),
+        .integer => return makeNodeTy(node, .i32),
+        .false,
+        .true,
+        => return makeNodeTy(node, .bool),
+        .identifier => return try self.checkIdentifier(node),
+        else => unreachable, // TODO
+    }
+    return .i32;
+}
+
+/// helper to make the two liners in checkExpr two liners
+fn makeNodeTy(node: *Node, ty: Type.Handle) Type.Handle {
+    node.ty = ty;
+    return ty;
+}
+
+fn checkBinaryOp(self: *Sema, node: *Node) !Type.Handle {
+    const binary_op = &node.data.binary_op;
+
+    const lhs_ty = try self.checkExpr(binary_op.left);
+    const rhs_ty = try self.checkExpr(binary_op.right);
+
+    if (lhs_ty != rhs_ty) {
+        try self.logger.add(.{
+            .start = node.start,
+            .end = node.end,
+            .kind = .{ .SemaError = .MismatchedTypes },
+            .message = try self.allocator.print(
+                "mismatched types {s} and {s} in binary expression",
+                .{
+                    try lhs_ty.allocName(self.file_table, self.allocator),
+                    try rhs_ty.allocName(self.file_table, self.allocator),
+                },
+            ),
+        });
+    }
+    if (!lhs_ty.isNum()) {
+        try self.logger.add(.{
+            .start = node.start,
+            .end = node.end,
+            .kind = .{ .SemaError = .NotSupportedType },
+            .message = try self.allocator.print(
+                "operator not supported for type {s}",
+                .{try lhs_ty.allocName(self.file_table, self.allocator)},
+            ),
+        });
+        return error.SemaError;
+    }
+
+    node.ty = lhs_ty;
+    return lhs_ty;
+}
+
+fn checkComparison(self: *Sema, node: *Node) !Type.Handle {
     // TODO
     _ = self;
     _ = node;
-    return .i32;
+    return .bool;
+}
+
+fn checkIdentifier(self: *Sema, node: *Node) !Type.Handle {
+    std.debug.assert(node.tag == .identifier); // who knows?
+
+    const name = self.file_table.tokenHStr(
+        node.data.token,
+        self.file,
+    );
+    const sym = self.scope.lookup(name) orelse {
+        try self.logger.add(.{
+            .start = node.start,
+            .end = node.end,
+            .kind = .{ .SemaError = .UnknownIdentifier },
+            .message = try self.allocator.print(
+                "usage of undefined identifier '{s}'",
+                .{name},
+            ),
+            .help = if (try self.suggestIdentifier(name)) |sug|
+                try self.allocator.print("did you mean '{s}'?", .{sug})
+            else
+                null,
+        });
+        return error.SemaError;
+    };
+
+    node.ty = sym.ty;
+    return sym.ty;
+}
+
+pub fn identifierDist(self: *Sema, a: []const u8, b: []const u8) !usize {
+    if (a.len == 0) return b.len;
+    if (b.len == 0) return a.len;
+
+    const cols = b.len + 1;
+    const cells = (a.len + 1) * cols;
+
+    // allocate only if size is greater than 64
+    var s_buf: [4096]usize = undefined;
+    const h_buf: ?[]usize = if (cells > s_buf.len)
+        try self.allocator.alloc(usize, cells)
+    else
+        null;
+    // TODO: free? or let arena catch it?
+    const mat = if (h_buf) |buf| buf else s_buf[0..cells];
+
+    for (0..a.len + 1) |i| mat[i * cols] = i;
+    for (0..b.len + 1) |i| mat[i] = i;
+
+    for (a, 0..) |ac, i| {
+        const row = i + 1;
+        for (b, 0..) |bc, j| {
+            const col = j + 1;
+            const cost: usize = @intFromBool(std.ascii.toLower(ac) != std.ascii.toLower(bc));
+
+            var min = @min(
+                mat[(row - 1) * cols + col] + 1,
+                @min(
+                    mat[row * cols + (col - 1)] + 1,
+                    mat[(row - 1) * cols + (col - 1)],
+                ),
+            );
+            if (i > 0 and
+                j > 0 and
+                std.ascii.toLower(ac) == std.ascii.toLower(b[j - 1]) and
+                std.ascii.toLower(a[i - 1]) == std.ascii.toLower(bc))
+            {
+                min = @min(min, mat[(row - 2) * cols + (col - 2)] + cost);
+            }
+
+            mat[row * cols + col] = min;
+        }
+    }
+
+    return mat[a.len * cols + b.len];
+}
+
+pub fn suggestIdentifier(self: *Sema, unknown: []const u8) !?[]const u8 {
+    if (unknown.len < 3)
+        return null;
+    const max_dist: usize = @min(3, @max(1, unknown.len / 3));
+
+    var best_name: ?[]const u8 = null;
+    var best_dist: usize = max_dist + 1;
+
+    var iter = self.scope.symbols.keyIterator();
+
+    while (iter.next()) |name| {
+        const len_diff = if (unknown.len > name.len)
+            unknown.len - name.len
+        else
+            name.len - unknown.len;
+        if (len_diff >= best_dist)
+            continue;
+
+        const dist = try self.identifierDist(unknown, name.*);
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_name = name.*;
+            if (dist == 0)
+                break;
+        }
+    }
+
+    return best_name;
 }

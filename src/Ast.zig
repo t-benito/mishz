@@ -61,6 +61,14 @@ pub const Tag = enum {
     import_collection, // block
 };
 
+// external so Data is less bytes
+pub const FnStmt = struct {
+    name: Token.Handle,
+    params: []*Node,
+    generics: []Type.Handle,
+    body: []*Node,
+};
+
 pub const Data = union {
     token: Token.Handle,
     builtin: struct {
@@ -105,12 +113,7 @@ pub const Data = union {
         name: Token.Handle,
         val: *Node,
     },
-    fn_stmt: struct {
-        name: Token.Handle,
-        params: []*Node,
-        generics: []Type.Handle,
-        body: []*Node,
-    },
+    fn_stmt: *FnStmt,
     param: struct {
         name: Token.Handle,
     },
@@ -168,7 +171,7 @@ pub const Node = struct {
 comptime {
     const mode = @import("builtin").mode;
     testSize(Token, 12);
-    testSize(Node, if (mode == .debug) 88 else 80);
+    testSize(Node, if (mode == .debug) 64 else 56);
     testSize(Ast, 32);
 }
 

@@ -106,7 +106,7 @@ pub fn emitTopLevel(self: *Codegen, node: *Node, public: bool) !void {
 }
 
 pub fn emitFn(self: *Codegen, node: *Node, public: bool) !void {
-    const fun = &node.data.fn_stmt;
+    const fun = node.data.fn_stmt;
 
     var args = try ArrayList(Arg).initCapacity(
         self.allocator,

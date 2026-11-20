@@ -6,6 +6,7 @@ const Io = std.Io;
 const ProgNode = std.Progress.Node;
 
 const Ast = @import("Ast.zig");
+const FnStmt = Ast.FnStmt;
 const Node = Ast.Node;
 const Tag = Ast.Tag;
 const Sema = @import("Sema/Sema.zig");
@@ -949,18 +950,21 @@ pub const Parser = struct {
         const end = try self.expect(.close_body);
 
         const node = try self.allocator.create(Node);
+        const fn_stmt = try self.allocator.create(FnStmt);
+        fn_stmt.* = .{
+            .name = namei,
+            .body = body,
+            .params = try params.toOwnedSlice(self.allocator),
+            .generics = try generics.toOwnedSlice(self.allocator),
+        };
+
         node.* = Node{
             .start = start,
             .end = end.end,
             .ty = retty,
             .tag = .fn_stmt,
             .data = .{
-                .fn_stmt = .{
-                    .name = namei,
-                    .body = body,
-                    .params = try params.toOwnedSlice(self.allocator),
-                    .generics = try generics.toOwnedSlice(self.allocator),
-                },
+                .fn_stmt = fn_stmt,
             },
         };
         return node;
