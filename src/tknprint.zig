@@ -23,12 +23,7 @@ fn printTkn(token: Token, source: []const u8, writer: *std.Io.Writer) !void {
     for (0..getPadding(20, slice.len)) |_| {
         try writer.writeAll(" ");
     }
-    try writer.print("span: {} - {}", .{ token.start, token.end });
-    const len = std.fmt.count("span: {} - {}", .{ token.start, token.end });
-
-    for (0..getPadding(20, len)) |_| {
-        try writer.writeAll(" ");
-    }
+    try writer.print("span: {} - {}\n", .{ token.start, token.end });
 }
 
 inline fn getPadding(diff: u8, strlen: usize) usize {

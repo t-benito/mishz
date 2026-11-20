@@ -15,7 +15,7 @@ pub const Scope = struct {
     symbols: StringHashMapUnmanaged(Symbol) = .empty,
     kind: Scope.Kind = .{ .root = 0 },
 
-    pub const Kind = union {
+    pub const Kind = union(enum) {
         root: u0,
         function: Type.Handle,
         loop: u0,
@@ -32,13 +32,14 @@ pub const Scope = struct {
     }
 
     /// Panics if there is none since thats a compiler bug
-    pub fn enclosingFn(self: *const Scope) *Scope {
+    pub fn enclosingFn(self: *const Scope) *const Scope {
         var curr: ?*const Scope = self;
         while (curr) |s| : (curr = s.parent) {
             if (s.kind != .function)
-                return;
+                continue;
             return s;
         }
+        @panic("unexpted no enclosing function");
     }
 
     pub fn define(self: *Scope, name: []const u8, sym: Symbol, allocator: Allocator) !void {

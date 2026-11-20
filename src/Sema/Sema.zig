@@ -131,12 +131,21 @@ fn checkTop(self: *Sema, node: *Node) Err!void {
     }
 }
 
-fn checkStmt(self: *Sema, node: *Node) !void {
+fn checkStmt(self: *Sema, node: *Node) Err!void {
     switch (node.tag) {
         .let_stmt,
         .let_mut_stmt,
         => try self.checkLet(node),
+        .ret_stmt => try self.checkRet(node),
+        .if_stmt => try self.checkIf(node),
+        .block => try self.loopBlock(node),
         else => unreachable, // TODO
+    }
+}
+
+fn loopBlock(self: *Sema, node: *Node) !void {
+    for (node.data.block.body) |stmt| {
+        try self.checkStmt(stmt);
     }
 }
 
@@ -151,7 +160,7 @@ fn checkLet(self: *Sema, node: *Node) !void {
             .end = node.end,
             .kind = .{ .SemaError = .MismatchedTypes },
             .message = try self.allocator.print(
-                "mismatched type: expected {s}, got {s}",
+                "mismatched type: expected '{s}', got '{s}'",
                 .{
                     try node.getTy().allocName(self.file_table, self.allocator),
                     try ty.allocName(self.file_table, self.allocator),
@@ -171,6 +180,61 @@ fn checkLet(self: *Sema, node: *Node) !void {
         .ty = node.getTy(),
         .mut = mut,
     }, node);
+}
+
+fn checkRet(self: *Sema, node: *Node) !void {
+    const exp_ty = self.scope.enclosingFn().kind.function;
+    if (node.data.ret_stmt.val) |val| {
+        const got_ty = try self.checkExpr(val);
+        if (exp_ty != got_ty) {
+            try self.logger.add(.{
+                .start = node.start,
+                .end = node.end,
+                .kind = .{ .SemaError = .MismatchedTypes },
+                .message = try self.allocator.print(
+                    "mismatched return type '{s}' and function type '{s}'",
+                    .{
+                        try got_ty.allocName(self.file_table, self.allocator),
+                        try exp_ty.allocName(self.file_table, self.allocator),
+                    },
+                ),
+            });
+            return error.SemaError;
+        }
+    } else if (exp_ty != .void) {
+        try self.logger.add(.{
+            .start = node.start,
+            .end = node.end,
+            .kind = .{ .SemaError = .MismatchedTypes },
+            .message = "expected non-void return type",
+        });
+        return error.SemaError;
+    }
+    node.ty = exp_ty;
+}
+
+fn checkIf(self: *Sema, node: *Node) !void {
+    const if_node = &node.data.if_stmt;
+
+    const cond_ty = try self.checkExpr(if_node.cond);
+    if (cond_ty != .bool) {
+        try self.logger.add(.{
+            .start = if_node.cond.start,
+            .end = if_node.cond.end,
+            .kind = .{ .SemaError = .MismatchedTypes },
+            .message = try self.allocator.print(
+                "expected bool in if statement condition, got '{s}'",
+                .{try cond_ty.allocName(self.file_table, self.allocator)},
+            ),
+        });
+        return error.SemaError;
+    }
+
+    try self.checkStmt(if_node.body);
+
+    if (if_node.else_branch) |else_b| {
+        try self.checkStmt(else_b);
+    }
 }
 
 fn checkExpr(self: *Sema, node: *Node) Err!Type.Handle {
@@ -200,7 +264,6 @@ fn checkExpr(self: *Sema, node: *Node) Err!Type.Handle {
         .identifier => return try self.checkIdentifier(node),
         else => unreachable, // TODO
     }
-    return .i32;
 }
 
 /// helper to make the two liners in checkExpr one liners
@@ -221,7 +284,7 @@ fn checkBinaryOp(self: *Sema, node: *Node) !Type.Handle {
             .end = node.end,
             .kind = .{ .SemaError = .MismatchedTypes },
             .message = try self.allocator.print(
-                "mismatched types {s} and {s} in binary expression",
+                "mismatched types '{s}' and '{s}' in binary expression",
                 .{
                     try lhs_ty.allocName(self.file_table, self.allocator),
                     try rhs_ty.allocName(self.file_table, self.allocator),
@@ -235,7 +298,7 @@ fn checkBinaryOp(self: *Sema, node: *Node) !Type.Handle {
             .end = node.end,
             .kind = .{ .SemaError = .NotSupportedType },
             .message = try self.allocator.print(
-                "operator not supported for type {s}",
+                "operator not supported for type '{s}'",
                 .{try lhs_ty.allocName(self.file_table, self.allocator)},
             ),
         });
@@ -249,7 +312,7 @@ fn checkBinaryOp(self: *Sema, node: *Node) !Type.Handle {
 fn checkComparison(self: *Sema, node: *Node) !Type.Handle {
     // TODO
     _ = self;
-    _ = node;
+    node.ty = .bool;
     return .bool;
 }
 
