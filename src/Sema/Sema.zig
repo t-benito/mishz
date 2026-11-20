@@ -203,7 +203,7 @@ fn checkExpr(self: *Sema, node: *Node) Err!Type.Handle {
     return .i32;
 }
 
-/// helper to make the two liners in checkExpr two liners
+/// helper to make the two liners in checkExpr one liners
 fn makeNodeTy(node: *Node, ty: Type.Handle) Type.Handle {
     node.ty = ty;
     return ty;
