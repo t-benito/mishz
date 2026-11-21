@@ -1,6 +1,6 @@
 .{
     .name = .mishz,
-    .version = "0.0.2", // forces SemVer
+    .version = "0.0.3", // forces SemVer
     .fingerprint = 0xaaed53ec5caa9a08,
     .minimum_zig_version = "0.17.1",
     .dependencies = .{

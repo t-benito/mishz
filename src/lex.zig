@@ -220,18 +220,10 @@ pub const Lexer = struct {
                     continue;
                 } else if (nextc == '*') {
                     while (!self.isAtEnd()) {
-                        if (self.peek() != '*') {
+                        if (self.advance() == '*' and self.peek() == '/') {
                             _ = self.advance();
-                            continue;
+                            break;
                         }
-                        _ = self.advance();
-
-                        if (self.peek() != '/') {
-                            _ = self.advance();
-                            continue;
-                        }
-                        _ = self.advance();
-                        break;
                     }
                     continue;
                 }

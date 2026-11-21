@@ -1335,7 +1335,7 @@ pub const Parser = struct {
             .tag = .pub_stmt,
             .data = .{
                 .pub_stmt = .{
-                    .stmt = node,
+                    .stmt = stmt,
                 },
             },
         };

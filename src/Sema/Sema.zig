@@ -1,6 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
+const ArrayList = std.ArrayList;
 const Io = std.Io;
 const Writer = Io.Writer;
 const ProgNode = std.Progress.Node;
@@ -19,6 +20,7 @@ const lex = @import("../lex.zig");
 const Token = lex.Token;
 const typet = @import("Type.zig");
 const Type = typet.Type;
+const StructType = typet.StructType;
 const Symbol = @import("Symbol.zig");
 const Scope = Symbol.Scope;
 
@@ -57,7 +59,7 @@ pub fn init(allocator: Allocator, writer: *Io.Writer, file_table: *FileTable, fi
     };
 }
 
-pub fn define(self: *Sema, name: []const u8, sym: Symbol, node: *const Node) !void {
+fn define(self: *Sema, name: []const u8, sym: Symbol, node: *const Node) !void {
     self.scope.define(name, sym, self.allocator) catch |erro| {
         switch (erro) {
             error.AlreadyDefined => try self.logger.add(.{
@@ -81,7 +83,7 @@ pub fn define(self: *Sema, name: []const u8, sym: Symbol, node: *const Node) !vo
 
 pub fn run(self: *Sema) !void {
     for (self.ast.nodes) |node| {
-        try self.precheckTop(node);
+        self.precheckTop(node) catch {};
     }
 
     for (self.ast.nodes) |node| {
@@ -96,8 +98,8 @@ pub fn run(self: *Sema) !void {
 fn precheckTop(self: *Sema, node: *Node) Err!void {
     switch (node.tag) {
         .fn_stmt => {
-            const name = self.file_table.tokenStr(
-                self.ast.tokens[node.data.fn_stmt.name],
+            const name = self.file_table.tokenHStr(
+                node.data.fn_stmt.name,
                 self.file,
             );
             try self.define(name, Symbol{
@@ -107,7 +109,21 @@ fn precheckTop(self: *Sema, node: *Node) Err!void {
                 .mut = false, // func never mut
             }, node);
         },
-        .import => {},
+        .import => {
+            const import = &node.data.import_stmt;
+            const ast: *Ast = &self.file_table.files.items(.ast)[import.file].?;
+            const name = self.file_table.tokenHStr(
+                import.alias,
+                self.file,
+            );
+            try self.define(name, Symbol{
+                .kind = .module,
+                .data = .{ .module = ast },
+                .root = import.alias,
+                .ty = .void, // ???
+                .mut = false,
+            }, node);
+        },
         else => unreachable, // TODO
     }
 }
@@ -230,9 +246,18 @@ fn checkIf(self: *Sema, node: *Node) !void {
         return error.SemaError;
     }
 
+    const prev_scope = self.scope;
+    self.scope = .{
+        .parent = &prev_scope,
+    };
     try self.checkStmt(if_node.body);
+    self.scope = prev_scope;
 
     if (if_node.else_branch) |else_b| {
+        self.scope = .{
+            .parent = &prev_scope,
+        };
+        defer self.scope = prev_scope;
         try self.checkStmt(else_b);
     }
 }

@@ -1,9 +1,9 @@
 import "test.msh" as test;
 
 fn main() void {
-    /* */
+    /**/
     let sugar = 1;
     let j = sugar + 2;
-    if j + 3:
+    if j == 3:
         ret;
 }

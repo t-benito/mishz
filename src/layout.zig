@@ -18,7 +18,7 @@ pub const Struct = struct {
     size: u64,
     @"align": u64,
 
-    pub const PrimalField = struct {
+    pub const PrimField = struct {
         name: []const u8,
         ty: qbe.Type,
     };
@@ -27,7 +27,7 @@ pub const Struct = struct {
         @"struct": Struct,
         typedef: *TypeDef,
 
-        pub fn init(allocator: std.mem.Allocator, mod: *qbe.Module, name: []const u8, p_fields: []const PrimalField) !Def {
+        pub fn init(allocator: std.mem.Allocator, mod: *qbe.Module, name: []const u8, p_fields: []const PrimField) !Def {
             const items = try allocator.alloc(qbe.TypeDef.Item, p_fields.len);
             for (p_fields, 0..) |f, i| {
                 items[i] = .{
@@ -47,7 +47,7 @@ pub const Struct = struct {
         }
     };
 
-    pub fn init(allocator: std.mem.Allocator, name: []const u8, p_fields: []const PrimalField) !Struct {
+    pub fn init(allocator: std.mem.Allocator, name: []const u8, p_fields: []const PrimField) !Struct {
         var fields = try allocator.alloc(Field, p_fields.len);
         var offset: u64 = 0;
         var max_align: u64 = 0;

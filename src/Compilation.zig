@@ -143,8 +143,8 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
         for (file_table.files.items(.ast), 0..) |tast, i| {
             if (tast == null)
                 continue;
-            try writer.print("- ast of file {}\n", .{i});
-            try astprint.printAst(tast.?.nodes, 1, writer);
+            try writer.print("- ast of file {} (path {s})\n", .{ i, file_table.getPath(@intCast(i)) });
+            try astprint.printAst(&file_table, tast.?.nodes, 1, writer);
         }
         try writer.flush();
         return;
@@ -167,7 +167,7 @@ pub fn build(writer: *Writer, init: process.Init, args: []const [:0]const u8) !v
             if (tast == null)
                 continue;
             try writer.print("- ast of file {} (path {s})\n", .{ i, file_table.getPath(@intCast(i)) });
-            try astprint.printAst(tast.?.nodes, 1, writer);
+            try astprint.printAst(&file_table, tast.?.nodes, 1, writer);
         }
         try writer.flush();
         return;

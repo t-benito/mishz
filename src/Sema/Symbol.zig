@@ -2,6 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const StringHashMapUnmanaged = std.StringHashMapUnmanaged;
 
+const Ast = @import("../Ast.zig");
+
 const typet = @import("Type.zig");
 const Type = typet.Type;
 
@@ -50,9 +52,9 @@ pub const Scope = struct {
     }
 };
 
-//name: []const u8,
 ty: Type.Handle,
 kind: Kind,
+data: Data = .{ .empty = 0 },
 mut: bool = false,
 root: Token.Handle,
 
@@ -61,4 +63,10 @@ pub const Kind = enum {
     param,
     function,
     module,
+};
+
+// just in case theres ever more
+pub const Data = union {
+    empty: u0,
+    module: *Ast,
 };
